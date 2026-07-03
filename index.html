@@ -442,6 +442,22 @@
     </div>
     <div id="mcpConnList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
   </div>
+  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
+    <h3 style="font-size:15px; margin:0 0 4px">🛰 Vigia 24/7</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
+      O servidor pinga teus serviços a cada 5 min e te manda <b>push no celular</b> se algo cair (e quando voltar).
+      Instala o app <b>ntfy</b> (Android/iOS) → <b>Subscribe to topic</b> → usa o tópico abaixo.
+    </p>
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+      <input id="wdTopicInput" placeholder="tópico secreto do ntfy" oninput="setWdTopic(this.value)" style="flex:1">
+      <button class="btn sm" onclick="genWdTopic()">🎲 Gerar tópico</button>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <button class="btn sm primary" id="wdSendBtn" onclick="sendWatchdog()">📡 Ativar/atualizar vigia</button>
+      <button class="btn sm" id="wdTestBtn" onclick="testWatchdog()">🔔 Testar push</button>
+    </div>
+    <div id="wdStatus" style="font-size:12px; color:var(--tx3); margin-top:8px">—</div>
+  </div>
   <div class="modal-foot">
     <button class="btn" onclick="closeModals()">Fechar</button>
   </div>
@@ -1154,6 +1170,8 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   stateBadge(stateSyncOn()?"☁ sync ligada":"☁ desligada (token + repo privado de estado)");
   const mu=document.getElementById("mcpUrlInput"); if(mu) mu.value=DB.settings.mcpUrl||MCP_URL_DEFAULT;
   renderMcpConnections();
+  const wt=document.getElementById("wdTopicInput"); if(wt) wt.value=DB.settings.ntfyTopic||"";
+  renderWatchdog();
   document.getElementById("aiModal").classList.add("open"); }
 function renderProvs(){
   const el=document.getElementById("provList");
@@ -2334,6 +2352,7 @@ function renderCockpit(){
   const rows=cockpitRows();
   const totCost=DB.companies.reduce((s,c)=>s+coCost(c),0);
   el.innerHTML=`
+    <div id="ckWatchdog" style="font-size:12px;color:var(--tx3);margin-bottom:8px">🛰 vigia: …</div>
     <div class="chips" style="margin-bottom:12px">
       <span class="chip">${rows.length} projeto(s)</span>
       <span class="chip">${rows.reduce((s,r)=>s+r.open,0)} pendência(s) aberta(s)</span>
@@ -2357,6 +2376,18 @@ function renderCockpit(){
 function openCockpit(){
   renderCockpit();
   document.getElementById("cockpitModal").classList.add("open");
+  // status do vigia (best-effort)
+  (async()=>{
+    const el=document.getElementById("ckWatchdog"); if(!el) return;
+    try{
+      const j=await wdFetch("/admin/watchdog");
+      const svcs=(j.config&&j.config.services)||[];
+      if(!svcs.length){ el.textContent="🛰 vigia: desligado (ativa em ⚙ Contas)"; return; }
+      const down=Object.entries((j.state&&j.state.services)||{}).filter(([,v])=>v&&v.ok===false).map(([k])=>k);
+      el.textContent=down.length?`🛰 vigia: 🔴 FORA DO AR — ${down.join(", ")}`:`🛰 vigia: ✅ ${svcs.length} serviço(s) no ar${j.state&&j.state.lastCheck?" · check "+agoStr(j.state.lastCheck):""}`;
+      el.style.color=down.length?"var(--warn)":"var(--tx3)";
+    }catch(e){ el.textContent="🛰 vigia: status indisponível"; }
+  })();
   // telemetria fresca em background pros que dá (pasta concedida ou repo+token)
   (async()=>{
     for(const c of DB.companies) for(const p of c.projects){
@@ -2415,6 +2446,62 @@ async function renderMcpConnections(){
         <span class="x" title="desconectar este Claude (revoga o acesso)" onclick="mcpDisconnect('${esc(c.clientId)}','${esc(c.clientName||"Claude")}')">✕</span>
       </div>`).join("");
   }catch(e){ el.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; }
+}
+/* ===== 🛰 Vigia 24/7 — config/status via /admin/watchdog do worker ===== */
+function setWdTopic(v){ DB.settings=DB.settings||{}; DB.settings.ntfyTopic=(v||"").trim(); save(); }
+function genWdTopic(){
+  const abc="abcdefghijklmnopqrstuvwxyz0123456789"; let t="workspace-";
+  const rnd=new Uint8Array(20); crypto.getRandomValues(rnd);
+  for(const b of rnd) t+=abc[b%abc.length];
+  const el=document.getElementById("wdTopicInput"); if(el) el.value=t;
+  setWdTopic(t);
+}
+function wdServices(){
+  const out=[];
+  for(const c of DB.companies) for(const p of c.projects) for(const a of (p.apps||[]))
+    if(a.health) out.push({name:`${a.name} (${p.name})`, url:a.health});
+  return out;
+}
+function wdBadge(txt, ok){ const el=document.getElementById("wdStatus"); if(el){ el.textContent=txt; el.style.color= ok===false?"var(--warn)":"var(--tx3)"; } }
+async function wdFetch(path, opts){
+  const tok=(DB.settings||{}).githubToken;
+  if(!tok) throw new Error("cola o token do GitHub (acima) primeiro");
+  const r=await fetch(mcpUrl()+path, Object.assign({headers:{Authorization:"Bearer "+tok, "content-type":"application/json"}}, opts||{}));
+  if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+  return r.json().catch(()=>({}));
+}
+async function sendWatchdog(){
+  const b=document.getElementById("wdSendBtn"), set=s=>{ if(b) b.textContent=s; };
+  const topic=(DB.settings||{}).ntfyTopic||"";
+  const services=wdServices();
+  if(!topic){ alert("Gera (🎲) ou cola um tópico ntfy primeiro."); return; }
+  if(!services.length){ alert("Nenhum serviço com health check cadastrado — preenche o campo 'Health check' nos serviços."); return; }
+  set("⏳ enviando…");
+  try{
+    const j=await wdFetch("/admin/watchdog",{method:"POST", body:JSON.stringify({ntfyTopic:topic, services})});
+    set(`✓ vigiando ${j.saved} serviço(s)`); renderWatchdog();
+  }catch(e){ set("⚠ falhou"); alert("Vigia: "+(e.message||e)); }
+  setTimeout(()=>set("📡 Ativar/atualizar vigia"), 2800);
+}
+async function testWatchdog(){
+  const b=document.getElementById("wdTestBtn"), set=s=>{ if(b) b.textContent=s; };
+  set("⏳…");
+  try{ await wdFetch("/admin/watchdog/test",{method:"POST"}); set("✓ push enviado — olha o celular"); }
+  catch(e){ set("⚠"); alert("Teste: "+(e.message||e)); }
+  setTimeout(()=>set("🔔 Testar push"), 3200);
+}
+async function renderWatchdog(){
+  const tok=(DB.settings||{}).githubToken;
+  if(!tok){ wdBadge("cola o token do GitHub pra ver o status"); return; }
+  try{
+    const j=await wdFetch("/admin/watchdog");
+    const svcs=(j.config&&j.config.services)||[];
+    if(!svcs.length){ wdBadge("vigia desligado — envia os serviços com 📡"); return; }
+    const st=(j.state&&j.state.services)||{};
+    const down=Object.entries(st).filter(([,v])=>v&&v.ok===false).map(([k])=>k);
+    const last=j.state&&j.state.lastCheck?` · último check ${agoStr(j.state.lastCheck)}`:"";
+    wdBadge(down.length?`🔴 FORA DO AR: ${down.join(", ")}${last}`:`✅ ${svcs.length} serviço(s) no ar${last}`, down.length?false:true);
+  }catch(e){ wdBadge("status indisponível: "+(e.message||e), false); }
 }
 async function mcpDisconnect(clientId, name){
   if(!confirm(`Desconectar "${name}"? Ele perde o acesso à brain na hora (precisaria autorizar de novo).`)) return;
