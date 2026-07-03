@@ -1292,16 +1292,26 @@ function renderAccHeader(){
 }
 async function githubLogout(){
   if(!confirm("Sair da conta GitHub neste navegador? O acesso deste painel é removido (as IAs já conectadas continuam).")) return;
+  // Local-first: o mapa também vive NESTE navegador. Em máquina compartilhada,
+  // sair sem limpar deixaria a workspace visível pro próximo — então pergunta.
+  const wipe=confirm("Limpar TAMBÉM os dados da workspace deste navegador?\n\n• SIM (recomendado em computador compartilhado): o mapa some daqui — volta inteiro quando você entrar de novo (está salvo no repo privado).\n• NÃO: só desconecta; o mapa continua visível neste navegador.");
   const tok=(DB.settings||{}).githubToken||"";
   if(/^gho_/.test(tok)){ // token do login (OAuth) → revoga no GitHub também (best-effort)
     try{ await fetch(mcpUrl()+"/panel/logout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({access_token:tok})}); }catch(e){}
+  }
+  if(wipe){
+    // apaga a cópia local inteira (dados + rastros) e reinicia zerado
+    ["","-syncat","-patexp","-ghlogin"].forEach(s=>localStorage.removeItem(LS_KEY+s));
+    try{ await idbSet("brainDir", null); }catch(e){} // solta o handle da pasta local do cérebro
+    location.reload();
+    return;
   }
   setGithubToken("");
   localStorage.removeItem(LS_KEY+"-ghlogin");
   const gi=document.getElementById("ghTokenInput"); if(gi) gi.value="";
   const card=document.getElementById("ghLoginCard"); if(card){ card.style.display="none"; card.innerHTML=""; }
   renderAccHeader(); renderMembers(); renderMcpConnections(); renderWatchdog();
-  stateBadge("☁ desconectado");
+  stateBadge("☁ desconectado (mapa continua neste navegador — use Sair de novo pra limpar)");
 }
 
 /* ===== ⚡ Entrar com GitHub — OAuth Device Flow (via worker) ===== */
