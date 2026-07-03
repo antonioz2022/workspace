@@ -428,6 +428,20 @@
     </div>
     <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
   </div>
+  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
+    <h3 style="font-size:15px; margin:0 0 4px">🔌 Claudes conectados (MCP da brain)</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
+      Qualquer conta Claude tua pode se conectar à brain: copia a URL, cola em
+      <b>Claude → Configurações → Conectores → Adicionar conector personalizado</b> e autoriza com teu GitHub.
+      Aqui você vê e <b>desconecta</b> as conexões (revogação real, na hora).
+    </p>
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+      <input id="mcpUrlInput" placeholder="https://workspace-mcp.antonioz2022.workers.dev" oninput="setMcpUrl(this.value)" style="flex:1">
+      <button class="btn sm primary" id="mcpCopyBtn" onclick="copyMcpUrl()">📋 Copiar URL do conector</button>
+      <button class="btn sm" onclick="renderMcpConnections()">🔄</button>
+    </div>
+    <div id="mcpConnList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
+  </div>
   <div class="modal-foot">
     <button class="btn" onclick="closeModals()">Fechar</button>
   </div>
@@ -1138,6 +1152,8 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   const gs=document.getElementById("ghTokenStatus"); if(gs) gs.textContent=DB.settings.githubToken?"✓ token salvo neste navegador":"";
   const sr=document.getElementById("stateRepoInput"); if(sr) sr.value=DB.settings.stateRepo||"";
   stateBadge(stateSyncOn()?"☁ sync ligada":"☁ desligada (token + repo privado de estado)");
+  const mu=document.getElementById("mcpUrlInput"); if(mu) mu.value=DB.settings.mcpUrl||MCP_URL_DEFAULT;
+  renderMcpConnections();
   document.getElementById("aiModal").classList.add("open"); }
 function renderProvs(){
   const el=document.getElementById("provList");
@@ -2362,6 +2378,52 @@ async function syncStateNow(){
   if(!stateSyncOn()){ alert("Cola o token E o repo de estado (owner/repo privado) primeiro."); return; }
   const pulled=await pullState({force:false});
   if(!pulled) await pushState();
+}
+
+/* ===== 🔌 Claudes conectados — gestão das conexões do MCP da brain =====
+   O worker expõe /admin/connections (GET/DELETE), autenticado com o MESMO PAT do
+   painel (ele confere no GitHub que o dono é o Antonio). Desconectar = deleteClient
+   no servidor (cascata) — aquele Claude perde o acesso na hora. */
+const MCP_URL_DEFAULT="https://workspace-mcp.antonioz2022.workers.dev";
+function mcpUrl(){ return (((DB.settings||{}).mcpUrl)||MCP_URL_DEFAULT).replace(/\/+$/,""); }
+function setMcpUrl(v){ DB.settings=DB.settings||{}; DB.settings.mcpUrl=(v||"").trim(); save(); }
+async function copyMcpUrl(){
+  const ok=await copyText(mcpUrl()+"/mcp");
+  const b=document.getElementById("mcpCopyBtn");
+  if(b){ b.textContent=ok?"✓ copiado — cole no Claude":"⚠ veja o console"; if(!ok) console.log(mcpUrl()+"/mcp");
+    setTimeout(()=>{ b.textContent="📋 Copiar URL do conector"; }, 2600); }
+}
+function mcpDate(n){ if(!n) return "—"; if(n<1e12) n*=1000; return new Date(n).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+async function renderMcpConnections(){
+  const el=document.getElementById("mcpConnList"); if(!el) return;
+  const tok=(DB.settings||{}).githubToken;
+  if(!tok){ el.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">cola o token do GitHub (acima) pra ver as conexões</div>`; return; }
+  el.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">carregando conexões…</div>`;
+  try{
+    const r=await fetch(mcpUrl()+"/admin/connections",{headers:{Authorization:"Bearer "+tok}});
+    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+    const j=await r.json();
+    const cons=j.connections||[];
+    if(!cons.length){ el.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">nenhum Claude conectado ainda</div>`; return; }
+    el.innerHTML=cons.map(c=>`
+      <div class="mini-item" style="cursor:default">
+        <span class="mi-emoji">🤖</span>
+        <span style="flex:1;min-width:0">
+          <b>${esc(c.clientName||"Claude")}</b>
+          <span style="color:var(--tx3);font-size:11px"> · conectado em ${mcpDate(c.registrationDate)} · ${c.grants.length} autorização(ões)${c.grants[0]&&c.grants[0].label?` · ${esc(c.grants[0].label)}`:""}</span>
+        </span>
+        <span class="x" title="desconectar este Claude (revoga o acesso)" onclick="mcpDisconnect('${esc(c.clientId)}','${esc(c.clientName||"Claude")}')">✕</span>
+      </div>`).join("");
+  }catch(e){ el.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; }
+}
+async function mcpDisconnect(clientId, name){
+  if(!confirm(`Desconectar "${name}"? Ele perde o acesso à brain na hora (precisaria autorizar de novo).`)) return;
+  try{
+    const r=await fetch(mcpUrl()+"/admin/connections/"+encodeURIComponent(clientId),{
+      method:"DELETE", headers:{Authorization:"Bearer "+((DB.settings||{}).githubToken||"")}});
+    if(!r.ok && r.status!==204){ const j=await r.json().catch(()=>({})); throw new Error(j.error||("HTTP "+r.status)); }
+    renderMcpConnections();
+  }catch(e){ alert("Desconectar: "+(e.message||e)); }
 }
 
 /* ============ auto-refresh no foco + auto-ping (só fatos, nunca IA) ============ */
