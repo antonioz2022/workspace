@@ -337,6 +337,14 @@
     <div class="f"><label>Nome</label><input id="coName"></div>
   </div>
   <div class="f"><label>Descrição curta</label><input id="coDesc"></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🧬 Perfil pra IA <span style="font-weight:400;color:var(--tx3)">(opcional — alimenta a brain)</span></div>
+  <div class="f-row">
+    <div class="f"><label>Tom de voz</label><input id="coTone" placeholder="ex.: épico, gamer"></div>
+    <div class="f"><label>Público-alvo</label><input id="coAudience" placeholder="ex.: fãs de DBZ"></div>
+  </div>
+  <div class="f"><label>Proposta / essência</label><input id="coValue" placeholder="o que é, em 1 frase"></div>
+  <div class="f"><label>Do's &amp; Don'ts</label><textarea id="coRules" rows="2" placeholder="sempre… / nunca…"></textarea></div>
+  <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyProfilePrompt('co')">✨ Sugerir com IA (copia prompt)</button></div>
   <div class="f"><label>Cor</label><input id="coColor" type="color" value="#6d8dff" style="height:44px;padding:5px"></div>
   <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
     <input type="file" id="coImgFile" accept="image/*" onchange="pickLogo(event,'co')">
@@ -352,6 +360,14 @@
     <div class="f"><label>Nome</label><input id="pjName"></div>
   </div>
   <div class="f"><label>Descrição</label><input id="pjDesc"></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🧬 Perfil pra IA <span style="font-weight:400;color:var(--tx3)">(opcional)</span></div>
+  <div class="f-row">
+    <div class="f"><label>Tom de voz</label><input id="pjTone"></div>
+    <div class="f"><label>Público-alvo</label><input id="pjAudience"></div>
+  </div>
+  <div class="f"><label>Proposta / essência</label><input id="pjValue"></div>
+  <div class="f"><label>Do's &amp; Don'ts</label><textarea id="pjRules" rows="2"></textarea></div>
+  <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyProfilePrompt('pj')">✨ Sugerir com IA (copia prompt)</button></div>
   <div class="f"><label>Status</label>
     <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
   </div>
@@ -786,7 +802,8 @@ function openDrawer(f){
             <span class="mi-emoji">${p.img?`<img src="${esc(p.img)}" style="width:26px;height:26px;object-fit:contain;vertical-align:middle">`:esc(p.emoji||"🚀")}</span>${esc(p.name)}<span class="arrow">→</span>
           </div>`).join("") || '<div class="dr-desc" style="color:var(--tx3)">nenhum projeto</div>'}
       </div>
-      <div style="margin-top:14px"><button class="btn sm primary" onclick="openPjModalFor('${c.id}')">＋ Novo projeto</button></div>`;
+      <div style="margin-top:14px"><button class="btn sm primary" onclick="openPjModalFor('${c.id}')">＋ Novo projeto</button></div>
+      ${briefSectionHtml(c.id)}`;
     foot.innerHTML=`
       <button class="btn" onclick="openCoModal('${c.id}')">✎ Editar</button>
       <button class="btn ghost" onclick="delCo('${c.id}')">Excluir empresa</button>`;
@@ -810,6 +827,7 @@ function openDrawer(f){
       </div>
       <textarea id="pjMemory" style="width:100%; min-height:90px; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:10px 13px; font-size:13px; font-family:'JetBrains Mono',monospace; resize:vertical">${esc(p.context||"")}</textarea>
       <div id="memBar" style="margin-top:8px"><button class="btn sm" onclick="saveMemory('${p.id}')">💾 Salvar memória</button></div>
+      ${briefSectionHtml(p.id)}
       <div class="dr-sec">Serviços</div>
       <div class="mini-list">
         ${p.apps.map(a=>`
@@ -938,6 +956,7 @@ function openCoModal(id){
   document.getElementById("coEmoji").value=c?(c.emoji||""):"";
   document.getElementById("coName").value=c?c.name:"";
   document.getElementById("coDesc").value=c?(c.desc||""):"";
+  {const pr=(c&&c.profile)||{}; document.getElementById("coTone").value=pr.tone||""; document.getElementById("coAudience").value=pr.audience||""; document.getElementById("coValue").value=pr.value||""; document.getElementById("coRules").value=pr.rules||"";}
   document.getElementById("coColor").value=c?(c.color||"#6d8dff"):"#6d8dff";
   pendingLogo.co=undefined;
   document.getElementById("coImgFile").value="";
@@ -948,16 +967,17 @@ function saveCo(){
   const name=document.getElementById("coName").value.trim();
   if(!name) return alert("Dá um nome pra empresa.");
   const data={emoji:document.getElementById("coEmoji").value.trim()||"🏢", name,
-    desc:document.getElementById("coDesc").value.trim(), color:document.getElementById("coColor").value};
+    desc:document.getElementById("coDesc").value.trim(), color:document.getElementById("coColor").value,
+    profile:{tone:document.getElementById("coTone").value.trim(), audience:document.getElementById("coAudience").value.trim(), value:document.getElementById("coValue").value.trim(), rules:document.getElementById("coRules").value.trim()}};
   if(pendingLogo.co!==undefined){ data.img = pendingLogo.co || ""; if(pendingLogo.co) data.imgFit="cover"; }
-  if(editingCo){ Object.assign(findNode(editingCo).co, data); }
+  if(editingCo){ const co=findNode(editingCo).co; Object.assign(co, data); co._coDirty=true; }
   else{
     const id=uid();
     const vx=(innerWidth/2-cam.x)/cam.z, vy=(innerHeight/2-cam.y)/cam.z;
-    DB.companies.push({id, ...data, x:vx, y:vy, projects:[]});
+    DB.companies.push({id, ...data, x:vx, y:vy, projects:[], _coDirty:true});
     newborn.add(id);
   }
-  save(); closeModals(); render();
+  save(); scheduleSync(); closeModals(); render();
 }
 function delCo(id){
   const c=findNode(id).co;
@@ -977,6 +997,7 @@ function openPjModal(id){
   document.getElementById("pjStatus").value=p?(p.status||"ativo"):"ativo";
   document.getElementById("pjGithub").value=p?(p.github||""):"";
   document.getElementById("pjLocal").value=p?(p.local||""):"";
+  {const pr=(p&&p.profile)||{}; document.getElementById("pjTone").value=pr.tone||""; document.getElementById("pjAudience").value=pr.audience||""; document.getElementById("pjValue").value=pr.value||""; document.getElementById("pjRules").value=pr.rules||"";}
   (async()=>{ const rs=await ghMyRepos(); const dl=document.getElementById("ghRepoList");
     if(dl) dl.innerHTML=rs.map(r=>`<option value="${esc(r)}">`).join(""); })();
   pendingLogo.pj=undefined;
@@ -990,10 +1011,11 @@ function savePj(){
   const data={emoji:document.getElementById("pjEmoji").value.trim()||"🚀", name,
     desc:document.getElementById("pjDesc").value.trim(), status:document.getElementById("pjStatus").value,
     github:document.getElementById("pjGithub").value.trim(),
-    local:document.getElementById("pjLocal").value.trim()};
+    local:document.getElementById("pjLocal").value.trim(),
+    profile:{tone:document.getElementById("pjTone").value.trim(), audience:document.getElementById("pjAudience").value.trim(), value:document.getElementById("pjValue").value.trim(), rules:document.getElementById("pjRules").value.trim()}};
   if(pendingLogo.pj!==undefined){ data.img = pendingLogo.pj || ""; if(pendingLogo.pj) data.imgFit="contain"; }
   if(!data.github) data.github=ghAutoMatchRepo(name);   // conecta sozinho ao repo com nome parecido
-  if(editingPj){ Object.assign(findNode(editingPj).pj, data); }
+  if(editingPj){ const pj=findNode(editingPj).pj; Object.assign(pj, data); pj._memDirty=true; }
   else{
     const co=findNode(pjTargetCo).co;
     const id=uid();
@@ -1450,6 +1472,28 @@ async function writeFile(dir, name, text){
   const w=await fh.createWritable(); await w.write(text); await w.close();
 }
 
+function profileBlock(pr){
+  pr=pr||{}; const rows=[];
+  if(pr.tone) rows.push(`- **Tom de voz:** ${pr.tone}`);
+  if(pr.audience) rows.push(`- **Público-alvo:** ${pr.audience}`);
+  if(pr.value) rows.push(`- **Proposta / essência:** ${pr.value}`);
+  if(pr.rules) rows.push(`- **Do's & Don'ts:** ${pr.rules}`);
+  return rows.length ? `\n## Perfil pra IA\n${rows.join("\n")}\n` : "";
+}
+function genEmpresaMd(c){
+  const projs=(c.projects||[]).map(p=>`- **${p.name}** (${p.status||"ativo"})${p.desc?` — ${p.desc}`:""}`).join("\n")||"(nenhum)";
+  return `# ${c.name} — perfil da empresa\n\n${c.desc||""}\n${profileBlock(c.profile)}\n## Projetos\n${projs}\n\n## Brand kit\n[brand/](brand/) — logos + cores em brand.md\n`;
+}
+async function copyProfilePrompt(which){
+  const isCo=which==="co";
+  const nm=(document.getElementById(isCo?"coName":"pjName").value||"").trim()||"(sem nome)";
+  let mat="o que você já sabe";
+  if(!isCo){ const gh=(document.getElementById("pjGithub").value||"").trim(); if(gh) mat=`o repositório ${gh} (README/CLAUDE.md/código) e o que você sabe`; }
+  const alvo=isCo?`a empresa "${nm}"`:`o projeto "${nm}"`;
+  const prompt=`Com base em ${mat}, proponha um PERFIL curto de ${alvo} pra alimentar a brain do Antonio. Responda EXATAMENTE assim, 1 linha por campo, específico e direto:\n\nTom de voz: <...>\nPúblico-alvo: <...>\nProposta / essência: <...>\nDo's & Don'ts: <...>\n\nDepois eu colo cada linha no campo correspondente do painel.`;
+  const ok=await copyText(prompt);
+  const b=(typeof event!=="undefined")&&event.target; if(b){ const o=b.textContent; b.textContent=ok?"✓ copiado — cole na IA":"⚠ veja console"; if(!ok)console.log(prompt); setTimeout(()=>{b.textContent=o;},2000); }
+}
 function genProjetoMd(c,p){
   const svcs=(p.apps||[]).map(a=>{
     let l=`- **${a.name}** — ${a.role||""} · ${a.plan||"—"} · ${(parseFloat(a.cost)||0)>0?"~US$ "+parseFloat(a.cost).toFixed(0)+"/mês":"grátis"}`;
@@ -1463,7 +1507,7 @@ function genProjetoMd(c,p){
 **Status:** ${p.status||"ativo"} · **Custo:** ~US$ ${pjCost(p).toFixed(0)}/mês
 
 ${p.desc||""}
-
+${profileBlock(p.profile)}
 ## Serviços & assinaturas
 ${svcs||"(nenhum)"}
 
@@ -1938,7 +1982,7 @@ function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v|
    O repo de estado É a Grande Brain: brain/<empresa>/<projeto>/{memoria,pendencias,
    projeto}.md + INDEX.md. Painel commita edições (qualquer device); IAs commitam por
    fora e o painel importa ao abrir o projeto (quando a pasta local não está no jogo). */
-const queuedBrainPids=new Set();
+const queuedBrainPids=new Set(), queuedBrainCids=new Set();
 let brainPushTimer=null, brainPushing=false;
 const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
 function brainDirOf(c,p){ return `brain/${slug(c.name)}/${slug(p.name)}`; }
@@ -1982,16 +2026,19 @@ async function putBrainFile(path, text, msg){
 }
 function queueBrainPush(){
   if(!stateSyncOn()) return;
-  for(const c of DB.companies) for(const p of c.projects)
-    if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
-  if(!queuedBrainPids.size) return;
+  for(const c of DB.companies){
+    if(c._coDirty) queuedBrainCids.add(c.id);
+    for(const p of c.projects) if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
+  }
+  if(!queuedBrainPids.size && !queuedBrainCids.size) return;
   clearTimeout(brainPushTimer);
   brainPushTimer=setTimeout(flushBrainPush, 4500);
 }
 async function flushBrainPush(){
-  if(brainPushing||!stateSyncOn()||!queuedBrainPids.size) return;
+  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size)) return;
   brainPushing=true;
   const pids=[...queuedBrainPids]; queuedBrainPids.clear();
+  const cids=[...queuedBrainCids]; queuedBrainCids.clear();
   try{
     brainBadge("☁ salvando no cérebro…");
     for(const pid of pids){
@@ -2001,10 +2048,15 @@ async function flushBrainPush(){
       await putBrainFile(`${d}/pendencias.md`, serTodos(f.pj), "brain: pendências — "+f.pj.name);
       await putBrainFile(`${d}/projeto.md`, genProjetoMd(f.co,f.pj), "brain: projeto — "+f.pj.name);
     }
+    for(const cid of cids){
+      const c=DB.companies.find(x=>x.id===cid); if(!c) continue;
+      await putBrainFile(`brain/${slug(c.name)}/empresa.md`, genEmpresaMd(c), "brain: empresa — "+c.name);
+      c._coDirty=false;
+    }
     await putBrainFile("INDEX.md", genIndexMd(), "brain: INDEX atualizado");
     brainBadge("☁ salvo no cérebro "+hhmm(), true);
   }catch(e){
-    pids.forEach(id=>queuedBrainPids.add(id));   // re-enfileira pra próxima
+    pids.forEach(id=>queuedBrainPids.add(id)); cids.forEach(id=>queuedBrainCids.add(id));
     brainBadge("☁ falha: "+(e.message||e), false);
   }
   brainPushing=false;
@@ -2109,6 +2161,80 @@ async function uploadBrainFiles(ev){
   }
   if(st) st.textContent=done?`✓ ${done} arquivo(s) no cérebro`:"";
   if(sel){ const f=findNode(sel.id); if(f&&(f.type==="co"||f.type==="pj")) hydrateFiles(f); }
+}
+/* ===== Bloco 1B: Briefings de tarefa — 1 clique monta o prompt-mestre pra IA ===== */
+const BRIEF_TYPES={
+  video:{label:"🎬 Vídeo de apresentação", task:"Crie um ROTEIRO de vídeo de apresentação (60–90s): gancho inicial, o que é, 2–3 diferenciais, e um call-to-action. Sugira cenas, narração e onde usar cada logo/asset do brand kit."},
+  post:{label:"📣 Post / anúncio", task:"Crie um post para redes sociais: headline forte, corpo curto, hashtags e CTA — no tom da marca. Sugira a imagem (usando o brand kit)."},
+  readme:{label:"📄 README / landing", task:"Escreva um README/página de apresentação: título, tagline, o que é, principais features, como acessar/usar, e prints sugeridos."},
+  art:{label:"🎨 Arte / material visual", task:"Proponha uma peça visual (capa/banner/thumbnail): conceito, composição, uso do logo e das cores da marca, e o texto na arte. Baseie-se nos arquivos do brand kit."},
+  analysis:{label:"🔍 Análise de estado", task:"Faça uma análise do estado atual: o que está pronto, o que falta (pendências), riscos, e os 3 próximos passos recomendados."},
+  free:{label:"💬 Tarefa livre", task:null}
+};
+async function listBrainDirNames(dir){
+  if(!stateSyncOn()) return [];
+  try{ const j=await ghGet(`/repos/${stateRepo()}/contents/${dir}`);
+    return (Array.isArray(j)?j:[]).filter(x=>x.type==="file"&&x.name!==".gitkeep").map(x=>`${dir}/${x.name}`); }
+  catch(e){ return []; }
+}
+async function buildBriefing(kind, c, p, free){
+  const T=BRIEF_TYPES[kind]||BRIEF_TYPES.free;
+  const task=(kind==="free"?(free||"(descreva a tarefa)"):T.task);
+  const cs=slug(c.name);
+  let out=`# BRIEFING — ${T.label}${p?` · ${p.name}`:` · ${c.name}`}\n\n`;
+  out+=`## Tarefa\n${task}\n\n`;
+  out+=`## Empresa: ${c.name}\n${c.desc||""}\n`;
+  out+=profileBlock(c.profile).replace(/^\n## Perfil pra IA\n/,"") ;
+  out+=`\n`;
+  if(p){
+    out+=`## Projeto: ${p.name} (${p.status||"ativo"})\n${p.desc||""}\n`;
+    const pb=profileBlock(p.profile).replace(/^\n## Perfil pra IA\n/,"");
+    if(pb.trim()) out+=pb+`\n`;
+    out+=`\n### Estado atual (memória)\n${(p.context||"(sem memória registrada)").trim()}\n`;
+    const open=(p.todos||[]).filter(t=>!t.done);
+    out+=`\n### Pendências abertas\n${open.length?open.map(t=>`- ${t.t}`).join("\n"):"(nenhuma)"}\n`;
+  }else{
+    out+=`## Projetos\n${(c.projects||[]).map(x=>`- ${x.name} (${x.status||"ativo"})${x.desc?` — ${x.desc}`:""}`).join("\n")||"(nenhum)"}\n`;
+  }
+  // brand kit + assets
+  const brandFiles=await listBrainDirNames(`brain/${cs}/brand`);
+  const assetFiles=p?await listBrainDirNames(`brain/${cs}/${slug(p.name)}/assets`):[];
+  out+=`\n## Identidade visual (brand kit)\n`;
+  out+=`Manifesto de marca (cores, uso do logo): brain/${cs}/brand/brand.md\n`;
+  const allFiles=[...brandFiles,...assetFiles];
+  out+=`Arquivos disponíveis: ${allFiles.length?allFiles.join(" · "):"(nenhum ainda — subir no painel)"}\n`;
+  out+=`> Ficam no repo PRIVADO \`${stateRepo()||"antonioz2022/workspace-state"}\` — clone com git pra baixar os arquivos reais.\n`;
+  // recursos técnicos
+  out+=`\n## Recursos técnicos\n`;
+  if(p&&p.github) out+=`- Código (git): \`${p.github}\`\n`;
+  if(p&&p.local) out+=`- Pasta local (PC do Antonio): \`${p.local}\`\n`;
+  const svcs=(p?p.apps:(c.projects||[]).flatMap(x=>x.apps||[]))||[];
+  const links=svcs.filter(a=>a.url||a.dash).map(a=>`${a.name}: ${a.url||a.dash}`);
+  if(links.length) out+=`- Serviços: ${links.join(" · ")}\n`;
+  out+=`\n## Onde buscar mais\nBrain completa (memória, pendências, todos os projetos): repo \`${stateRepo()||"antonioz2022/workspace-state"}\` → comece pelo INDEX.md.\n`;
+  return out;
+}
+function briefSectionHtml(id){
+  const opts=Object.entries(BRIEF_TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join("");
+  return `<div class="dr-sec">🎯 Briefing pra IA</div>
+    <div style="font-size:12px;color:var(--tx3);margin:-4px 0 8px">Monta um prompt completo (identidade + memória + marca + código + serviços) pra colar na sua IA.</div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <select id="briefKind" onchange="document.getElementById('briefFree').style.display=this.value==='free'?'block':'none'" style="flex:1;min-width:150px;background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:9px;color:var(--tx);padding:8px">${opts}</select>
+      <button class="btn sm primary" id="briefBtn" onclick="copyBriefing('${id}')">📋 Copiar briefing</button>
+    </div>
+    <input id="briefFree" placeholder="descreva a tarefa livre…" style="display:none;width:100%;margin-top:6px">`;
+}
+async function copyBriefing(id){
+  const f=findNode(id); if(!f) return;
+  const kind=document.getElementById("briefKind").value;
+  const free=(document.getElementById("briefFree")||{}).value||"";
+  const btn=document.getElementById("briefBtn"), set=s=>{ if(btn) btn.innerHTML=s; };
+  set("⏳ montando…");
+  let text; try{ text=await buildBriefing(kind, f.co, f.pj||null, free); }
+  catch(e){ set("⚠ erro"); alert("Briefing: "+(e.message||e)); return; }
+  const ok=await copyText(text);
+  set(ok?"✓ copiado — cole na IA":"⚠ veja o console"); if(!ok) console.log(text);
+  setTimeout(()=>set("📋 Copiar briefing"), 2800);
 }
 async function deleteBrainFile(i){
   const x=filesList[i]; if(!x||!filesDir) return;
