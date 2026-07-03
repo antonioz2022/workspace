@@ -398,6 +398,16 @@
     </p>
     <input id="ghTokenInput" type="password" placeholder="github_pat_..." oninput="setGithubToken(this.value)" style="width:100%">
     <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
+    <p style="color:var(--tx2); font-size:12px; margin:12px 0 6px">
+      <b>Sync de estado (multi-dispositivo):</b> repo <b>PRIVADO</b> teu onde o painel guarda um <code>state.json</code>
+      (empresas/projetos — <b>sem</b> token, <b>sem</b> chaves de IA). Colar token + este repo num aparelho novo puxa tudo.
+      O token precisa de <b>Contents: read and write</b> nesse repo.
+    </p>
+    <div style="display:flex; gap:8px; align-items:center">
+      <input id="stateRepoInput" placeholder="ex.: antonioz2022/workspace-state" oninput="setStateRepo(this.value)" style="flex:1">
+      <button class="btn sm" onclick="syncStateNow()">☁ Sincronizar agora</button>
+    </div>
+    <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
   </div>
   <div class="modal-foot">
     <button class="btn" onclick="closeModals()">Fechar</button>
@@ -466,6 +476,7 @@ function save(){
   localStorage.setItem(LS_KEY, JSON.stringify(DB));
   localStorage.setItem(LS_KEY+"-cam", JSON.stringify(cam));
   localStorage.setItem(LS_KEY+"-exp", JSON.stringify([...expanded]));
+  if(typeof scheduleStatePush==="function") scheduleStatePush();
 }
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>(s??"").toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1069,6 +1080,8 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   DB.settings=DB.settings||{};
   const gi=document.getElementById("ghTokenInput"); if(gi) gi.value=DB.settings.githubToken||"";
   const gs=document.getElementById("ghTokenStatus"); if(gs) gs.textContent=DB.settings.githubToken?"✓ token salvo neste navegador":"";
+  const sr=document.getElementById("stateRepoInput"); if(sr) sr.value=DB.settings.stateRepo||"";
+  stateBadge(stateSyncOn()?"☁ sync ligada":"☁ desligada (token + repo privado de estado)");
   document.getElementById("aiModal").classList.add("open"); }
 function renderProvs(){
   const el=document.getElementById("provList");
@@ -1791,11 +1804,104 @@ async function syncRepoBrain(pid){
   setTimeout(()=>setBtn("🧩 Brain no repo"), 3000);
 }
 
+/* ===== Fase 2b-2: sync de estado multi-device (state.json em repo PRIVADO) =====
+   O PAT vira o "login": colar o token + repo de estado num aparelho novo puxa tudo.
+   SEGURANÇA: token e apiKeys NUNCA sobem — são removidos antes do upload e
+   preservados localmente no pull. Estratégia: last-write-wins por updatedAt. */
+const STATE_PATH="state.json";
+let statePushTimer=null, stateApplying=false, statePushing=false;
+function b64e(str){
+  const b=new TextEncoder().encode(str); let bin="";
+  for(let i=0;i<b.length;i+=0x8000) bin+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
+  return btoa(bin);
+}
+function b64d(b64){
+  const bin=atob((b64||"").replace(/\s/g,"")); const b=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(b);
+}
+function stateRepo(){ const r=((DB.settings||{}).stateRepo||"").trim(); return /^[^/\s]+\/[^/\s]+$/.test(r)?r:null; }
+function stateSyncOn(){ return !!(stateRepo() && (DB.settings||{}).githubToken); }
+function sanitizeStateForSync(){
+  const clone=JSON.parse(JSON.stringify(DB));
+  if(clone.settings){ delete clone.settings.githubToken; (clone.settings.providers||[]).forEach(p=>{ delete p.apiKey; }); }
+  return clone;
+}
+function stateBadge(txt, ok){
+  const el=document.getElementById("stateSyncStatus");
+  if(el){ el.textContent=txt; el.style.color = ok===false ? "var(--warn)" : "var(--tx3)"; }
+}
+async function ghGetFile(repo,path){
+  const j=await ghGet(`/repos/${repo}/contents/${encodeURIComponent(path)}`);
+  if(!j||Array.isArray(j)) return null;
+  return {sha:j.sha, text:b64d(j.content||"")};
+}
+async function ghPutFile(repo,path,text,sha,msg){
+  const tok=(DB.settings||{}).githubToken;
+  const body={message:msg, content:b64e(text)}; if(sha) body.sha=sha;
+  const r=await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`,{
+    method:"PUT",
+    headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
+    body:JSON.stringify(body)});
+  if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
+    throw new Error("GitHub "+r.status+(r.status===403?" — o token precisa de Contents: read AND write no repo de estado":r.status===404?" — repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
+  return r.json();
+}
+async function pushState(){
+  if(!stateSyncOn() || stateApplying || statePushing) return;
+  statePushing=true; stateBadge("☁ enviando…");
+  try{
+    const payload={updatedAt:Date.now(), device:navigator.userAgent.slice(0,40), db:sanitizeStateForSync()};
+    const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null);
+    await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
+    localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
+    const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+  }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); }
+  statePushing=false;
+}
+function scheduleStatePush(){
+  if(!stateSyncOn() || stateApplying) return;
+  clearTimeout(statePushTimer); statePushTimer=setTimeout(pushState, 4000);
+}
+async function pullState({force=false}={}){
+  if(!stateSyncOn() || statePushing) return false;
+  const f=await ghGetFile(stateRepo(),STATE_PATH).catch(e=>{ stateBadge("☁ falha ao ler: "+(e.message||e), false); return null; });
+  if(!f){ return false; }
+  let payload; try{ payload=JSON.parse(f.text); }catch(e){ stateBadge("☁ state.json inválido", false); return false; }
+  if(!payload || !payload.db || !Array.isArray(payload.db.companies)) return false;
+  const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
+  if(!force && !(payload.updatedAt>last)) return false;
+  stateApplying=true;
+  try{
+    const keepTok=(DB.settings||{}).githubToken;
+    const keepRepo=(DB.settings||{}).stateRepo;
+    const keepKeys={}; ((DB.settings||{}).providers||[]).forEach(p=>{ if(p.apiKey) keepKeys[p.id]=p.apiKey; });
+    DB=migrate(payload.db);
+    DB.settings=DB.settings||{};
+    if(keepTok) DB.settings.githubToken=keepTok;
+    if(keepRepo) DB.settings.stateRepo=keepRepo;
+    (DB.settings.providers||[]).forEach(p=>{ if(keepKeys[p.id]) p.apiKey=keepKeys[p.id]; });
+    save();
+    localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
+    render();
+    const h=new Date(); stateBadge(`☁ atualizado do repo ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+  }finally{ stateApplying=false; }
+  return true;
+}
+function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
+  stateBadge(stateSyncOn()?"☁ sync ligada — salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
+async function syncStateNow(){
+  if(!stateSyncOn()){ alert("Cola o token E o repo de estado (owner/repo privado) primeiro."); return; }
+  const pulled=await pullState({force:false});
+  if(!pulled) await pushState();
+}
+
 /* ============ auto-refresh no foco + auto-ping (só fatos, nunca IA) ============ */
 let _autoBusy=false;
 async function autoRefreshAll(force){
   if(_autoBusy) return; _autoBusy=true;
   try{
+    if(stateSyncOn()) await pullState().catch(()=>{});
     for(const c of DB.companies) for(const p of c.projects){
       try{ const dir=await getProjDir(p.id,{prompt:false}); if(dir) await refreshProjectTelemetry(p); }catch(e){}
     }
@@ -1813,6 +1919,7 @@ setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true);
 render();
 if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
 ensureBrain();
+if(stateSyncOn()) setTimeout(()=>pullState().catch(()=>{}), 600);
 </script>
 </body>
 </html>
