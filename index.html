@@ -485,6 +485,32 @@
     </div>
     <div id="wdStatus" style="font-size:12px; color:var(--tx3); margin-top:8px">—</div>
   </div>
+  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
+    <h3 style="font-size:15px; margin:0 0 4px">👥 Membros da workspace</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
+      Uma workspace = um repo privado. Membro = colaborador do repo: <b>Editor</b> edita mapa e brain ·
+      <b>Leitor</b> só vê · <b>Admin</b> gerencia. As IAs (Claude/ChatGPT) de cada membro ganham acesso à brain automaticamente.
+    </p>
+    <div id="memberSelf" style="font-size:12px; color:var(--tx3); margin-bottom:8px">—</div>
+    <div style="display:flex; gap:8px; margin-bottom:8px">
+      <input id="memberUser" placeholder="usuário do GitHub (ex.: fulano)" style="flex:1">
+      <select id="memberRole" style="width:110px">
+        <option value="push">Editor</option>
+        <option value="pull">Leitor</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button class="btn sm primary" onclick="inviteMember()">Convidar</button>
+    </div>
+    <div id="membersList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
+    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+      <button class="btn sm" onclick="copyInviteText(this)">📋 Copiar convite (passos pro novo membro)</button>
+      <button class="btn sm" onclick="renderMembers()">🔄</button>
+    </div>
+    <p style="color:var(--tx3); font-size:11.5px; margin-top:10px">
+      🏢 <b>Enterprise:</b> crie uma Organization no GitHub e transfira o repo da brain — times, SSO e permissões finas.
+      O Córtex funciona igual (só muda o owner/repo). Bônus: na org, membros podem usar token fine-grained.
+    </p>
+  </div>
   <div class="modal-foot">
     <button class="btn" onclick="closeModals()">Fechar</button>
   </div>
@@ -1242,6 +1268,7 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   renderMcpConnections();
   const wt=document.getElementById("wdTopicInput"); if(wt) wt.value=DB.settings.ntfyTopic||"";
   renderWatchdog();
+  renderMembers();
   document.getElementById("aiModal").classList.add("open"); }
 function renderProvs(){
   const el=document.getElementById("provList");
@@ -2076,13 +2103,27 @@ async function ghPutFile(repo,path,text,sha,msg){
 async function pushState(){
   if(!stateSyncOn() || stateApplying || statePushing) return;
   statePushing=true; stateBadge("☁ enviando…");
+  const who=localStorage.getItem(LS_KEY+"-ghlogin")||navigator.userAgent.slice(0,40);
+  let lastErr=null;
   try{
-    const payload={updatedAt:Date.now(), device:navigator.userAgent.slice(0,40), db:sanitizeStateForSync()};
-    const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null);
-    await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
-    localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
-    const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
-  }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); }
+    for(let tent=1; tent<=2; tent++){
+      try{
+        const payload={updatedAt:Date.now(), device:who, db:sanitizeStateForSync()};
+        const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null); // re-lê o sha a cada tentativa
+        await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
+        localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
+        const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+        statePushing=false; return;
+      }catch(e){ lastErr=e; }
+    }
+    // 2 tentativas falharam (provável conflito: outra pessoa sincronizou no meio) →
+    // NÃO sobrescreve às cegas: puxa a versão nova e avisa.
+    statePushing=false;
+    const pulled=await pullState({force:true}).catch(()=>false);
+    stateBadge(pulled
+      ? "☁ conflito: alguém sincronizou antes — puxei a versão nova (revisa e edita de novo se precisar)"
+      : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
+  }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); statePushing=false; }
   statePushing=false;
 }
 function scheduleStatePush(){
@@ -2110,7 +2151,7 @@ async function pullState({force=false}={}){
     save();
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
-    const h=new Date(); stateBadge(`☁ atualizado do repo ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+    const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
   }finally{ stateApplying=false; }
   return true;
 }
@@ -2615,6 +2656,97 @@ async function renderWatchdog(){
     const last=j.state&&j.state.lastCheck?` · último check ${agoStr(j.state.lastCheck)}`:"";
     wdBadge(down.length?`🔴 FORA DO AR: ${down.join(", ")}${last}`:`✅ ${svcs.length} serviço(s) no ar${last}`, down.length?false:true);
   }catch(e){ wdBadge("status indisponível: "+(e.message||e), false); }
+}
+/* ===== 👥 Membros — colaboração GitHub-nativa =====
+   Workspace = o repo de estado (privado). Membro = collaborator do repo.
+   Papéis: admin (gerencia) / push=Editor / pull=Leitor. As IAs dos membros entram
+   pelo MCP (o worker testa o acesso da pessoa ao repo). Token de cada um fica SÓ
+   no navegador da pessoa. */
+function roleLabel(p){ p=p||{}; return p.admin?"admin":(p.maintain||p.push)?"editor":"leitor"; }
+function ghApiHeaders(){ return {Authorization:"Bearer "+((DB.settings||{}).githubToken||""), Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"}; }
+async function renderMembers(){
+  const list=document.getElementById("membersList"), self=document.getElementById("memberSelf");
+  if(!list) return;
+  if(!stateSyncOn()){
+    list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">liga a sync (token + repo, acima) — a workspace É o repo de estado</div>`;
+    if(self) self.textContent=""; return;
+  }
+  list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">carregando membros…</div>`;
+  try{
+    const me=await ghGet("/user").catch(()=>null);
+    if(me&&me.login) localStorage.setItem(LS_KEY+"-ghlogin", me.login);
+    const repo=await ghGet("/repos/"+stateRepo()).catch(()=>null);
+    if(self) self.textContent=`workspace: ${stateRepo()} · você: @${me&&me.login||"?"} (${repo&&repo.permissions?roleLabel(repo.permissions):"?"})`;
+    let rows="";
+    let cols=null; try{ cols=await ghGet("/repos/"+stateRepo()+"/collaborators?affiliation=all&per_page=100"); }catch(e){ cols=null; }
+    if(Array.isArray(cols)){
+      rows+=cols.map(c=>`<div class="mini-item" style="cursor:default">
+        <span class="mi-emoji">${c.login===(me&&me.login)?"⭐":"👤"}</span>
+        <span style="flex:1;min-width:0"><b>@${esc(c.login)}</b> <span style="color:var(--tx3);font-size:11px">· ${roleLabel(c.permissions)}</span></span>
+        ${c.login!==(me&&me.login)?`<span class="x" title="remover da workspace" onclick="removeMember('${esc(c.login)}')">✕</span>`:""}
+      </div>`).join("");
+    }else{
+      rows+=`<div class="dr-desc" style="color:var(--warn)">não deu pra listar — pra GERENCIAR membros teu token precisa da permissão "Administration" no repo (ou usa a página do repo no GitHub)</div>`;
+    }
+    let invs=null; try{ invs=await ghGet("/repos/"+stateRepo()+"/invitations"); }catch(e){ invs=null; }
+    if(Array.isArray(invs)&&invs.length){
+      rows+=invs.map(i=>`<div class="mini-item" style="cursor:default;opacity:.75">
+        <span class="mi-emoji">✉️</span>
+        <span style="flex:1;min-width:0"><b>@${esc((i.invitee&&i.invitee.login)||"?")}</b> <span style="color:var(--tx3);font-size:11px">· convite pendente</span></span>
+        <span class="x" title="cancelar convite" onclick="cancelInvite(${parseInt(i.id,10)||0})">✕</span>
+      </div>`).join("");
+    }
+    list.innerHTML=rows||`<div class="dr-desc" style="color:var(--tx3)">só você por enquanto — convida alguém acima</div>`;
+  }catch(e){ list.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; }
+}
+async function inviteMember(){
+  const u=((document.getElementById("memberUser")||{}).value||"").trim().replace(/^@/,"");
+  const role=(document.getElementById("memberRole")||{}).value||"push";
+  if(!u){ alert("Digite o usuário do GitHub da pessoa."); return; }
+  if(!stateSyncOn()){ alert("Liga a sync primeiro (token + repo)."); return; }
+  try{
+    const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(u),{
+      method:"PUT", headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
+      body:JSON.stringify({permission:role})});
+    if(r.status===201) alert(`Convite enviado pra @${u}! A pessoa aceita no GitHub (e-mail/notificações). Depois manda pra ela o "📋 Copiar convite" com os passos do Córtex.`);
+    else if(r.status===204) alert(`@${u} já era membro — papel atualizado.`);
+    else{
+      const j=await r.json().catch(()=>({}));
+      throw new Error((r.status===403?'403 — teu token precisa da permissão "Administration" (read/write) no repo pra convidar. ':"HTTP "+r.status+" · ")+(j.message||""));
+    }
+    document.getElementById("memberUser").value="";
+    renderMembers();
+  }catch(e){ alert("Convite: "+(e.message||e)); }
+}
+async function removeMember(login){
+  if(!confirm(`Remover @${login} da workspace? A pessoa (e as IAs dela) perde o acesso à brain.`)) return;
+  try{
+    const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(login),{method:"DELETE", headers:ghApiHeaders()});
+    if(!r.ok&&r.status!==204) throw new Error("HTTP "+r.status);
+    renderMembers();
+  }catch(e){ alert("Remover: "+(e.message||e)); }
+}
+async function cancelInvite(id){
+  try{
+    await fetch("https://api.github.com/repos/"+stateRepo()+"/invitations/"+id,{method:"DELETE", headers:ghApiHeaders()});
+    renderMembers();
+  }catch(e){ alert("Cancelar: "+(e.message||e)); }
+}
+async function copyInviteText(btn){
+  const repo=stateRepo()||"<owner/repo>";
+  const txt=`Você foi convidado pra workspace do Córtex! 🧠
+
+1) Aceita o convite do GitHub (repo ${repo}) — chegou no teu e-mail/notificações
+2) Cria TEU token: github.com/settings/tokens → "Generate new token (classic)" → escopo "repo" → copia
+   (o token é teu e fica só no teu navegador — nunca compartilha)
+3) Abre o Córtex: https://antonioz2022.github.io/workspace/
+4) ⚙ Contas → cola teu token → no campo do repo de estado cola: ${repo} → sincroniza
+5) (opcional) Conecta tua IA: na seção "🤖 IAs conectadas", copia a URL do conector e adiciona no teu Claude/ChatGPT — tua IA passa a conhecer a workspace
+
+Pronto — mesmo mapa, mesma brain, cada um com seu acesso.`;
+  const ok=await copyText(txt);
+  if(btn){ btn.textContent=ok?"✓ copiado — manda pro novo membro":"⚠ veja o console"; if(!ok) console.log(txt);
+    setTimeout(()=>{ btn.textContent="📋 Copiar convite (passos pro novo membro)"; },3200); }
 }
 async function mcpDisconnect(clientId, name){
   if(!confirm(`Desconectar "${name}"? Ele perde o acesso à brain na hora (precisaria autorizar de novo).`)) return;
