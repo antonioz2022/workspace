@@ -33,6 +33,16 @@
   .hud .m b{font-family:var(--mono); font-variant-numeric:tabular-nums}
   .hud .m span, .dr-sec, .node .sub{font-family:var(--mono)}
 
+  /* ===== ⚙ Conta & Workspace: header de conta + abas ===== */
+  .acc-id{display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:var(--glass2)}
+  .acc-id .av{width:38px; height:38px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:16px; background:linear-gradient(135deg,#7C4FF0,#9D6BFF); color:#fff; flex:none}
+  .acc-tabs{display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin:16px 0 16px}
+  .acc-tab{background:transparent; border:1px solid transparent; border-bottom:none; color:var(--tx3); font-weight:650; font-size:13px; padding:8px 13px; border-radius:10px 10px 0 0; cursor:pointer; font-family:inherit}
+  .acc-tab:hover{color:var(--tx)}
+  .acc-tab.on{color:var(--tx); background:var(--glass2); border-color:var(--line)}
+  .tabpane{display:none}
+  .tabpane.on{display:block}
+
   /* ===== fundo ===== */
   .aurora{position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none}
   .blob{position:absolute; border-radius:50%; filter:blur(120px); opacity:.45; animation:drift 30s ease-in-out infinite alternate}
@@ -407,55 +417,23 @@
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="savePj()">Salvar</button></div>
 </div></div>
 
-<div class="overlay" id="aiModal"><div class="modal" style="width:min(600px,94vw)">
-  <h3>⚙ Contas de IA</h3>
-  <p style="color:var(--tx2); font-size:13px; margin:-8px 0 16px">
-    Cadastre suas contas/provedores. Cada chat escolhe qual conta e modelo usar — e dá pra trocar no meio da conversa.
-    As chaves ficam <b>somente neste navegador</b> (localStorage).
-  </p>
-  <div id="provList"></div>
-  <div style="display:flex; gap:8px; margin:14px 0 20px">
-    <button class="btn sm primary" onclick="openProvForm()">＋ Nova conta</button>
-    <button class="btn sm" onclick="openProvForm('anthropic')">+ Claude (Anthropic)</button>
-    <button class="btn sm" onclick="openProvForm('groq')">+ Groq</button>
+<div class="overlay" id="aiModal"><div class="modal" style="width:min(640px,94vw)">
+  <h3>⚙ Conta & Workspace</h3>
+  <div id="accHeader" style="margin-top:10px"></div>
+  <div class="acc-tabs">
+    <button class="acc-tab on" data-tab="conta" onclick="switchAccTab('conta')">Conta</button>
+    <button class="acc-tab" data-tab="membros" onclick="switchAccTab('membros')">👥 Membros</button>
+    <button class="acc-tab" data-tab="ias" onclick="switchAccTab('ias')">🤖 IAs</button>
+    <button class="acc-tab" data-tab="vigia" onclick="switchAccTab('vigia')">🛰 Vigia</button>
+    <button class="acc-tab" data-tab="avancado" onclick="switchAccTab('avancado')">Avançado</button>
   </div>
-  <div id="provForm" style="display:none; border-top:1px solid var(--line); padding-top:16px">
-    <div class="f-row">
-      <div class="f"><label>Nome da conta (ex.: Claude — pessoal)</label><input id="pvName"></div>
-      <div class="f" style="flex:0 0 170px"><label>Tipo</label>
-        <select id="pvKind" onchange="pvKindChanged()">
-          <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai">OpenAI-compatível</option>
-        </select>
-      </div>
-    </div>
-    <div class="f" id="pvBaseWrap" style="display:none"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
-    <div class="f"><label>API Key</label><input id="pvKey" type="password" placeholder="sk-..."></div>
-    <div class="f"><label>Modelos (separados por vírgula — o 1º é o padrão)</label><input id="pvModels"></div>
-    <div class="modal-foot" style="margin-top:6px">
-      <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
-      <button class="btn primary" onclick="saveProv()">Salvar conta</button>
-    </div>
-  </div>
-  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:2px">
-    <h3 style="font-size:15px; margin:0 0 4px">🐙 GitHub (modo remoto · multi-dispositivo)</h3>
-    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
-      Conecte o GitHub pra usar de qualquer aparelho, sincronizar e — se você é o dono — gerenciar a workspace inteira aqui, sem mexer no GitHub.
-    </p>
-    <button class="btn primary" onclick="githubLogin()" style="width:100%; justify-content:center">⚡ Entrar com GitHub</button>
-    <div id="ghLoginCard" style="display:none; margin-top:10px; padding:12px; border:1px solid var(--line2); border-radius:12px; background:var(--glass2)"></div>
-    <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin-top:8px"></div>
-    <details style="margin-top:8px">
-      <summary style="font-size:12px; color:var(--tx3); cursor:pointer">ou colar um token manualmente (avançado / mais restrito)</summary>
-      <p style="color:var(--tx2); font-size:11.5px; margin:8px 0 6px">
-        Token pessoal (<b>fine-grained</b> com <b>Contents: read/write</b> pra sync; ou <b>classic</b> escopo <code>repo</code> pra gerenciar membros também). Fica <b>só neste navegador</b>.
-      </p>
-      <input id="ghTokenInput" type="password" placeholder="github_pat_… ou ghp_…" oninput="setGithubToken(this.value)" style="width:100%">
-    </details>
-    <p style="color:var(--tx2); font-size:12px; margin:12px 0 6px">
-      <b>Sync de estado (multi-dispositivo):</b> repo <b>PRIVADO</b> teu onde o painel guarda um <code>state.json</code>
-      (empresas/projetos — <b>sem</b> token, <b>sem</b> chaves de IA). Colar token + este repo num aparelho novo puxa tudo.
-      O token precisa de <b>Contents: read and write</b> nesse repo.
+
+  <div class="tabpane on" id="tab-conta">
+    <div id="ghLoginCard" style="display:none; margin-bottom:10px; padding:12px; border:1px solid var(--line2); border-radius:12px; background:var(--glass2)"></div>
+    <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin:0 0 12px"></div>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px">
+      <b>☁ Sync multi-dispositivo:</b> repo <b>privado</b> onde o Córtex guarda a workspace
+      (<code>state.json</code> + brain — <b>sem</b> tokens, <b>sem</b> chaves). Mesmo repo em outro aparelho = mesmo mapa.
     </p>
     <div style="display:flex; gap:8px; align-items:center">
       <input id="stateRepoInput" placeholder="ex.: antonioz2022/workspace-state" oninput="setStateRepo(this.value)" style="flex:1">
@@ -463,7 +441,41 @@
     </div>
     <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
   </div>
-  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
+
+  <div class="tabpane" id="tab-avancado">
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px"><b>Token manual</b> (alternativa ao login — ex.: fine-grained restrito com <b>Contents: read/write</b>, ou classic <code>repo</code>):</p>
+    <input id="ghTokenInput" type="password" placeholder="github_pat_… ou ghp_…" oninput="setGithubToken(this.value)" style="width:100%">
+    <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:16px">
+      <h3 style="font-size:14px; margin:0 0 4px">Contas de IA por API key (legado — chats no painel)</h3>
+      <p style="color:var(--tx2); font-size:11.5px; margin:0 0 10px">Só é preciso se um dia usar chats embutidos por API. As chaves ficam <b>somente neste navegador</b>.</p>
+      <div id="provList"></div>
+      <div style="display:flex; gap:8px; margin:12px 0 4px">
+        <button class="btn sm" onclick="openProvForm()">＋ Nova conta</button>
+        <button class="btn sm" onclick="openProvForm('anthropic')">+ Claude</button>
+        <button class="btn sm" onclick="openProvForm('groq')">+ Groq</button>
+      </div>
+      <div id="provForm" style="display:none; border-top:1px solid var(--line); padding-top:14px; margin-top:10px">
+        <div class="f-row">
+          <div class="f"><label>Nome da conta (ex.: Claude — pessoal)</label><input id="pvName"></div>
+          <div class="f" style="flex:0 0 170px"><label>Tipo</label>
+            <select id="pvKind" onchange="pvKindChanged()">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI-compatível</option>
+            </select>
+          </div>
+        </div>
+        <div class="f" id="pvBaseWrap" style="display:none"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
+        <div class="f"><label>API Key</label><input id="pvKey" type="password" placeholder="sk-..."></div>
+        <div class="f"><label>Modelos (separados por vírgula — o 1º é o padrão)</label><input id="pvModels"></div>
+        <div class="modal-foot" style="margin-top:6px">
+          <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
+          <button class="btn primary" onclick="saveProv()">Salvar conta</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabpane" id="tab-ias">
     <h3 style="font-size:15px; margin:0 0 4px">🤖 IAs conectadas à brain (Claude · ChatGPT)</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
       Copia a URL do conector e cola na IA — autoriza com teu GitHub. Aqui você vê e <b>desconecta</b> (revogação real, na hora).<br>
@@ -477,7 +489,7 @@
     </div>
     <div id="mcpConnList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
   </div>
-  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
+  <div class="tabpane" id="tab-vigia">
     <h3 style="font-size:15px; margin:0 0 4px">🛰 Vigia 24/7</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
       O servidor pinga teus serviços a cada 5 min e te manda <b>push no celular</b> se algo cair (e quando voltar).
@@ -493,7 +505,7 @@
     </div>
     <div id="wdStatus" style="font-size:12px; color:var(--tx3); margin-top:8px">—</div>
   </div>
-  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
+  <div class="tabpane" id="tab-membros">
     <h3 style="font-size:15px; margin:0 0 4px">👥 Membros da workspace</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
       Uma workspace = um repo privado. Membro = colaborador do repo: <b>Editor</b> edita mapa e brain ·
@@ -1255,9 +1267,47 @@ const PROV_PRESETS = {
 let editingProv=null;
 
 function patDays(){ const t=parseInt(localStorage.getItem(LS_KEY+"-patexp")||"0",10); if(!t) return null; return Math.floor((t-Date.now())/86400000); }
+/* ===== ⚙ Conta & Workspace: abas + header de conta + logout ===== */
+function switchAccTab(name){
+  document.querySelectorAll(".acc-tab").forEach(b=>b.classList.toggle("on", b.dataset.tab===name));
+  document.querySelectorAll(".tabpane").forEach(p=>p.classList.toggle("on", p.id==="tab-"+name));
+}
+function renderAccHeader(){
+  const el=document.getElementById("accHeader"); if(!el) return;
+  const tok=(DB.settings||{}).githubToken;
+  const login=localStorage.getItem(LS_KEY+"-ghlogin");
+  if(tok){
+    el.innerHTML=`<div class="acc-id">
+      <span class="av">${esc((login||"?").slice(0,1).toUpperCase())}</span>
+      <span style="flex:1;min-width:0"><b>@${esc(login||"conectado")}</b><br><span style="font-size:11.5px;color:var(--tx3)">GitHub conectado${login?"":" (token manual)"} · workspace ${esc(stateRepo()||"não configurada")}</span></span>
+      <button class="btn sm" onclick="githubLogout()">Sair</button>
+    </div>`;
+  }else{
+    el.innerHTML=`<div class="acc-id">
+      <span class="av" style="background:var(--glass2); border:1px solid var(--line2)">🐙</span>
+      <span style="flex:1;min-width:0"><b>Desconectado</b><br><span style="font-size:11.5px;color:var(--tx3)">entre pra sincronizar e gerenciar a workspace daqui</span></span>
+      <button class="btn sm primary" onclick="githubLogin()">⚡ Entrar com GitHub</button>
+    </div>`;
+  }
+}
+async function githubLogout(){
+  if(!confirm("Sair da conta GitHub neste navegador? O acesso deste painel é removido (as IAs já conectadas continuam).")) return;
+  const tok=(DB.settings||{}).githubToken||"";
+  if(/^gho_/.test(tok)){ // token do login (OAuth) → revoga no GitHub também (best-effort)
+    try{ await fetch(mcpUrl()+"/panel/logout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({access_token:tok})}); }catch(e){}
+  }
+  setGithubToken("");
+  localStorage.removeItem(LS_KEY+"-ghlogin");
+  const gi=document.getElementById("ghTokenInput"); if(gi) gi.value="";
+  const card=document.getElementById("ghLoginCard"); if(card){ card.style.display="none"; card.innerHTML=""; }
+  renderAccHeader(); renderMembers(); renderMcpConnections(); renderWatchdog();
+  stateBadge("☁ desconectado");
+}
+
 /* ===== ⚡ Entrar com GitHub — OAuth Device Flow (via worker) ===== */
 let ghDevicePoll=null;
 async function githubLogin(){
+  switchAccTab("conta"); // o card do código vive na aba Conta
   const card=document.getElementById("ghLoginCard"); if(!card) return;
   if(ghDevicePoll){ clearTimeout(ghDevicePoll); ghDevicePoll=null; }
   card.style.display="block";
@@ -1292,7 +1342,7 @@ function pollDeviceToken(deviceCode, interval, deadline){
         if(j.login) localStorage.setItem(LS_KEY+"-ghlogin", j.login);
         const card=document.getElementById("ghLoginCard");
         if(card) card.innerHTML=`<div style="color:var(--ok);font-size:13px">✓ conectado como <b>@${esc(j.login||"você")}</b> — já pode gerenciar tudo por aqui.</div>`;
-        renderMembers();
+        renderAccHeader(); renderMembers();
         return;
       }
       if(j.slow_down) interval=(j.interval||interval+5);
@@ -1322,6 +1372,8 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   const wt=document.getElementById("wdTopicInput"); if(wt) wt.value=DB.settings.ntfyTopic||"";
   renderWatchdog();
   renderMembers();
+  renderAccHeader();
+  switchAccTab("conta");
   document.getElementById("aiModal").classList.add("open"); }
 function renderProvs(){
   const el=document.getElementById("provList");
