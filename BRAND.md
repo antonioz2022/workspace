@@ -1,10 +1,19 @@
 # Córtex — identidade da marca (v1 · 2026-07)
 
-**Córtex** é o centro de comando / segundo cérebro: um canvas onde todas as empresas,
-projetos e IAs viram nós conectados, alimentados pela mesma brain.
+**Córtex** é a **memória compartilhada das suas IAs**: conecte Claude, ChatGPT e qualquer
+IA à mesma brain do seu negócio — elas já sabem tudo (empresas, projetos, código, voz de
+marca) e fazem o trabalho. Você comanda e aprova.
 
-**Tagline:** Um cérebro pra tudo que você constrói.
-*(alt: Comande tudo de um lugar · EN: One brain for everything you build.)*
+**Tagline:** Um cérebro pra todas as suas IAs.
+*(alts: “Elas fazem. Você comanda.” · “Pare de reexplicar seu negócio a cada IA.” ·
+EN: One brain for all your AIs.)*
+
+## Posicionamento
+Pra **fundadores e devs que tocam várias frentes** e querem a IA fazendo o trabalho pesado
+com o contexto certo. A ênfase é conectar as IAs às ideias/ao trabalho — não fazer no braço.
+- **Conecta** — todas as suas IAs numa brain só (via MCP), de qualquer aparelho.
+- **Sabe** — elas já conhecem seu negócio; sem reexplicar contexto a cada conversa.
+- **Executa** — elas agem com as instruções da brain; você só aprova.
 
 ## Símbolo
 Um grafo neural em forma de **“C”**: um núcleo brilhante (você, que vê tudo) + nós
