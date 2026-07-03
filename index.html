@@ -429,11 +429,11 @@
     <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
   </div>
   <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:14px">
-    <h3 style="font-size:15px; margin:0 0 4px">🔌 Claudes conectados (MCP da brain)</h3>
+    <h3 style="font-size:15px; margin:0 0 4px">🤖 IAs conectadas à brain (Claude · ChatGPT)</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
-      Qualquer conta Claude tua pode se conectar à brain: copia a URL, cola em
-      <b>Claude → Configurações → Conectores → Adicionar conector personalizado</b> e autoriza com teu GitHub.
-      Aqui você vê e <b>desconecta</b> as conexões (revogação real, na hora).
+      Copia a URL do conector e cola na IA — autoriza com teu GitHub. Aqui você vê e <b>desconecta</b> (revogação real, na hora).<br>
+      <b>Claude:</b> Configurações → Conectores → Adicionar conector personalizado.<br>
+      <b>ChatGPT:</b> Settings → Connectors → Advanced → <b>Developer mode</b> ON → Create. <span style="color:var(--tx3)">(exige plano pago; em Plus/Pro só LEITURA — escrita na brain via GPT é restrição da OpenAI)</span>
     </p>
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
       <input id="mcpUrlInput" placeholder="https://workspace-mcp.antonioz2022.workers.dev" oninput="setMcpUrl(this.value)" style="flex:1">
@@ -2407,7 +2407,7 @@ async function renderMcpConnections(){
     if(!cons.length){ el.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">nenhum Claude conectado ainda</div>`; return; }
     el.innerHTML=cons.map(c=>`
       <div class="mini-item" style="cursor:default">
-        <span class="mi-emoji">🤖</span>
+        <span class="mi-emoji">${/chatgpt|openai|gpt/i.test(c.clientName||"")?"🟢":"🟠"}</span>
         <span style="flex:1;min-width:0">
           <b>${esc(c.clientName||"Claude")}</b>
           <span style="color:var(--tx3);font-size:11px"> · conectado em ${mcpDate(c.registrationDate)} · ${c.grants.length} autorização(ões)${c.grants[0]&&c.grants[0].label?` · ${esc(c.grants[0].label)}`:""}</span>
