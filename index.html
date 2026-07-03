@@ -458,6 +458,12 @@
   <div class="f"><label>Health check (pinga e mostra status)</label><input id="apHealth"></div>
   <div class="f"><label>Notas</label><textarea id="apNotes"></textarea></div>
   <div class="f"><label>Alerta</label><input id="apAlert"></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🔧 Como a IA opera <span style="font-weight:400;color:var(--tx3)">(runbook — a IA age com as chaves do SEU ambiente)</span></div>
+  <div class="f"><label>Tipo</label>
+    <select id="apKind"><option value="">—</option><option value="github">GitHub (repo)</option><option value="render">Render (deploy)</option><option value="api">API / serviço HTTP</option><option value="crm">CRM / SaaS</option><option value="db">Banco de dados</option><option value="outro">Outro</option></select>
+  </div>
+  <div class="f"><label>Runbook — como agir (deploy, logs, testar; e onde estão as chaves NO AMBIENTE, sem os valores)</label><textarea id="apOps" rows="3" placeholder="ex.: deploy = push na main (⚠ produção). Logs no dashboard. Chaves: env vars no Render / git configurado local."></textarea></div>
+  <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyRunbookPrompt()">✨ Sugerir runbook (p/ IA)</button></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveApp()">Salvar</button></div>
 </div></div>
 
@@ -1042,6 +1048,7 @@ function openAppModal(id){
   document.getElementById("apCost").value=a?(a.cost||0):0;
   g("apDash",a&&a.dash); g("apUrl",a&&a.url); g("apHealth",a&&a.health);
   g("apNotes",a&&a.notes); g("apAlert",a&&a.alert);
+  document.getElementById("apKind").value=a?(a.kind||""):""; g("apOps",a&&a.ops);
   document.getElementById("appModal").classList.add("open");
 }
 function saveApp(){
@@ -1054,15 +1061,17 @@ function saveApp(){
     url:document.getElementById("apUrl").value.trim(),
     health:document.getElementById("apHealth").value.trim(),
     notes:document.getElementById("apNotes").value,
-    alert:document.getElementById("apAlert").value.trim()};
-  if(editingApp){ Object.assign(findNode(editingApp).ap, data); }
+    alert:document.getElementById("apAlert").value.trim(),
+    kind:document.getElementById("apKind").value,
+    ops:document.getElementById("apOps").value};
+  if(editingApp){ const f=findNode(editingApp); Object.assign(f.ap, data); if(f.pj) f.pj._memDirty=true; }
   else{
     const f=findNode(apTargetPj);
     const id=uid();
-    f.pj.apps.push({id, ...data});
+    f.pj.apps.push({id, ...data}); f.pj._memDirty=true;
     expanded.add(f.co.id); expanded.add(f.pj.id); newborn.add(id);
   }
-  save(); closeModals(); render();
+  save(); scheduleSync(); closeModals(); render();
 }
 function delApp(id){
   const f=findNode(id);
@@ -1494,6 +1503,27 @@ async function copyProfilePrompt(which){
   const ok=await copyText(prompt);
   const b=(typeof event!=="undefined")&&event.target; if(b){ const o=b.textContent; b.textContent=ok?"✓ copiado — cole na IA":"⚠ veja console"; if(!ok)console.log(prompt); setTimeout(()=>{b.textContent=o;},2000); }
 }
+async function copyRunbookPrompt(){
+  const nm=(document.getElementById("apName").value||"").trim()||"este serviço";
+  const kind=document.getElementById("apKind").value||"";
+  const url=(document.getElementById("apUrl").value||"").trim();
+  const notes=(document.getElementById("apNotes").value||"").trim();
+  const prompt=`Escreva um RUNBOOK curto de como operar o serviço "${nm}"${kind?` (${kind})`:""}${url?`, ${url}`:""} pra uma IA agir nele com segurança. Inclua: ações comuns (deploy, ver logs, testar), comandos, e ONDE ficam as credenciais no ambiente (env vars, git local…) — SEM os valores. ${notes?`Contexto: ${notes}. `:""}Responda em bullets curtos, direto ao ponto — é só eu colar no campo "Runbook" do painel.`;
+  const ok=await copyText(prompt);
+  const b=(typeof event!=="undefined")&&event.target; if(b){ const o=b.textContent; b.textContent=ok?"✓ copiado — cole na IA":"⚠ veja console"; if(!ok)console.log(prompt); setTimeout(()=>{b.textContent=o;},2000); }
+}
+function runbookBlock(p){
+  const ops=(p.apps||[]).filter(a=>a.ops||a.kind);
+  if(!ops.length) return "";
+  return `\n## Como operar (runbook pra IA)\n`+ops.map(a=>{
+    let s=`### ${a.name}${a.kind?` — ${a.kind}`:""}`;
+    if(a.url) s+=`\n- endpoint: ${a.url}`;
+    if(a.dash) s+=`\n- painel: ${a.dash}`;
+    if(a.health) s+=`\n- health: ${a.health}`;
+    if(a.ops) s+=`\n${a.ops.split("\n").filter(l=>l.trim()).map(l=>"- "+l.trim()).join("\n")}`;
+    return s;
+  }).join("\n\n")+`\n\n> A IA age com as credenciais do ambiente LOCAL do Antonio (nunca no repo). Não exponha/commite segredos; confirme antes de ações destrutivas (deploy em produção, apagar, envio em massa); valide com o health/teste após agir.\n`;
+}
 function genProjetoMd(c,p){
   const svcs=(p.apps||[]).map(a=>{
     let l=`- **${a.name}** — ${a.role||""} · ${a.plan||"—"} · ${(parseFloat(a.cost)||0)>0?"~US$ "+parseFloat(a.cost).toFixed(0)+"/mês":"grátis"}`;
@@ -1510,7 +1540,7 @@ ${p.desc||""}
 ${profileBlock(p.profile)}
 ## Serviços & assinaturas
 ${svcs||"(nenhum)"}
-
+${runbookBlock(p)}
 *(gerado pelo painel Workspace — edite pelo painel, não aqui)*
 `;
 }
@@ -2012,6 +2042,8 @@ function genIndexMd(){
       if(p.local) out+=`- **Pasta local (PC do Antonio)**: \`${p.local}\`\n`;
       const links=(p.apps||[]).filter(a=>a.url||a.dash).map(a=>`${a.name}: ${a.url||a.dash}`);
       if(links.length) out+=`- **Serviços**: ${links.join(" · ")}\n`;
+      const ops=(p.apps||[]).filter(a=>a.ops||a.kind).map(a=>a.name);
+      if(ops.length) out+=`- **Serviços operáveis** (runbook no projeto.md): ${ops.join(", ")}\n`;
     }
   }
   out+=`\n---\n\n- \`state.json\` — estado do painel Workspace (uso interno do app)\n`+
@@ -2169,6 +2201,7 @@ const BRIEF_TYPES={
   readme:{label:"📄 README / landing", task:"Escreva um README/página de apresentação: título, tagline, o que é, principais features, como acessar/usar, e prints sugeridos."},
   art:{label:"🎨 Arte / material visual", task:"Proponha uma peça visual (capa/banner/thumbnail): conceito, composição, uso do logo e das cores da marca, e o texto na arte. Baseie-se nos arquivos do brand kit."},
   analysis:{label:"🔍 Análise de estado", task:"Faça uma análise do estado atual: o que está pronto, o que falta (pendências), riscos, e os 3 próximos passos recomendados."},
+  action:{label:"🔧 Ação técnica (agir nos serviços)", task:null},
   free:{label:"💬 Tarefa livre", task:null}
 };
 async function listBrainDirNames(dir){
@@ -2179,7 +2212,7 @@ async function listBrainDirNames(dir){
 }
 async function buildBriefing(kind, c, p, free){
   const T=BRIEF_TYPES[kind]||BRIEF_TYPES.free;
-  const task=(kind==="free"?(free||"(descreva a tarefa)"):T.task);
+  const task=((kind==="free"||kind==="action")?(free||"(descreva a tarefa técnica — ex.: 'faça o deploy da Pousada')"):T.task);
   const cs=slug(c.name);
   let out=`# BRIEFING — ${T.label}${p?` · ${p.name}`:` · ${c.name}`}\n\n`;
   out+=`## Tarefa\n${task}\n\n`;
@@ -2211,6 +2244,21 @@ async function buildBriefing(kind, c, p, free){
   const svcs=(p?p.apps:(c.projects||[]).flatMap(x=>x.apps||[]))||[];
   const links=svcs.filter(a=>a.url||a.dash).map(a=>`${a.name}: ${a.url||a.dash}`);
   if(links.length) out+=`- Serviços: ${links.join(" · ")}\n`;
+  if(kind==="action" && p){
+    out+=`\n## Runbook dos serviços (como agir)\n`;
+    const ops=(p.apps||[]).filter(a=>a.ops||a.kind);
+    if(ops.length){ out+=ops.map(a=>{
+      let s=`### ${a.name}${a.kind?` — ${a.kind}`:""}`;
+      if(a.url) s+=`\n- endpoint: ${a.url}`; if(a.dash) s+=`\n- painel: ${a.dash}`; if(a.health) s+=`\n- health: ${a.health}`;
+      if(a.ops) s+=`\n${a.ops}`; return s;
+    }).join("\n\n")+"\n"; }
+    else out+=`(nenhum runbook preenchido — preencha "🔧 Como a IA opera" no serviço, no painel)\n`;
+    out+=`\n## ⚠️ Regras de segurança (OBRIGATÓRIAS)\n`+
+      `- Aja SÓ com as credenciais que já existem no MEU ambiente local (env vars, git configurado). Não peça, não crie, não commite, não exiba segredos.\n`+
+      `- CONFIRME comigo antes de qualquer ação destrutiva ou de produção (deploy, apagar, migração, envio em massa).\n`+
+      `- Depois de agir, VALIDE (health check / teste) e me diga o resultado real.\n`+
+      `- Se faltar algum acesso, diga exatamente o que falta — não improvise nem invente.\n`;
+  }
   out+=`\n## Onde buscar mais\nBrain completa (memória, pendências, todos os projetos): repo \`${stateRepo()||"antonioz2022/workspace-state"}\` → comece pelo INDEX.md.\n`;
   return out;
 }
