@@ -440,10 +440,18 @@
   <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:2px">
     <h3 style="font-size:15px; margin:0 0 4px">🐙 GitHub (modo remoto · multi-dispositivo)</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
-      Token pessoal <b>fine-grained</b> (escopo <b>Contents: read-only</b>) dos repositórios. Deixa o painel ler o estado remoto quando você não está no PC. Fica <b>só neste navegador</b>.
+      Conecte o GitHub pra usar de qualquer aparelho, sincronizar e — se você é o dono — gerenciar a workspace inteira aqui, sem mexer no GitHub.
     </p>
-    <input id="ghTokenInput" type="password" placeholder="github_pat_..." oninput="setGithubToken(this.value)" style="width:100%">
-    <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
+    <button class="btn primary" onclick="githubLogin()" style="width:100%; justify-content:center">⚡ Entrar com GitHub</button>
+    <div id="ghLoginCard" style="display:none; margin-top:10px; padding:12px; border:1px solid var(--line2); border-radius:12px; background:var(--glass2)"></div>
+    <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin-top:8px"></div>
+    <details style="margin-top:8px">
+      <summary style="font-size:12px; color:var(--tx3); cursor:pointer">ou colar um token manualmente (avançado / mais restrito)</summary>
+      <p style="color:var(--tx2); font-size:11.5px; margin:8px 0 6px">
+        Token pessoal (<b>fine-grained</b> com <b>Contents: read/write</b> pra sync; ou <b>classic</b> escopo <code>repo</code> pra gerenciar membros também). Fica <b>só neste navegador</b>.
+      </p>
+      <input id="ghTokenInput" type="password" placeholder="github_pat_… ou ghp_…" oninput="setGithubToken(this.value)" style="width:100%">
+    </details>
     <p style="color:var(--tx2); font-size:12px; margin:12px 0 6px">
       <b>Sync de estado (multi-dispositivo):</b> repo <b>PRIVADO</b> teu onde o painel guarda um <code>state.json</code>
       (empresas/projetos — <b>sem</b> token, <b>sem</b> chaves de IA). Colar token + este repo num aparelho novo puxa tudo.
@@ -1247,6 +1255,51 @@ const PROV_PRESETS = {
 let editingProv=null;
 
 function patDays(){ const t=parseInt(localStorage.getItem(LS_KEY+"-patexp")||"0",10); if(!t) return null; return Math.floor((t-Date.now())/86400000); }
+/* ===== ⚡ Entrar com GitHub — OAuth Device Flow (via worker) ===== */
+let ghDevicePoll=null;
+async function githubLogin(){
+  const card=document.getElementById("ghLoginCard"); if(!card) return;
+  if(ghDevicePoll){ clearTimeout(ghDevicePoll); ghDevicePoll=null; }
+  card.style.display="block";
+  card.innerHTML=`<div style="color:var(--tx2);font-size:12.5px">Falando com o GitHub…</div>`;
+  try{
+    const r=await fetch(mcpUrl()+"/panel/device/start",{method:"POST",headers:{"content-type":"application/json"}});
+    const j=await r.json();
+    if(j.error){
+      card.innerHTML=`<div style="color:var(--warn);font-size:12.5px">Não deu pra iniciar o login (<b>${esc(j.error)}</b>).<br>${esc(j.hint||"")}</div>`;
+      return;
+    }
+    window.open(j.verification_uri_complete,"_blank","noopener");
+    card.innerHTML=`
+      <div style="font-size:12.5px;color:var(--tx2)">Abriu uma aba no GitHub — é só clicar <b>Authorize</b>. ✅</div>
+      <div style="font-size:12px;color:var(--tx3);margin-top:6px">Se não abriu: <a href="${esc(j.verification_uri)}" target="_blank" rel="noopener" style="color:var(--ac)">${esc(j.verification_uri)}</a> e digite</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+        <code style="font-family:var(--mono);font-size:18px;letter-spacing:2px;background:var(--glass2);padding:6px 12px;border-radius:8px">${esc(j.user_code)}</code>
+        <button class="btn sm" onclick="copyText('${esc(j.user_code)}')">📋 copiar</button>
+      </div>
+      <div id="ghLoginWait" style="font-size:12px;color:var(--tx3);margin-top:10px">⏳ aguardando você autorizar no GitHub…</div>`;
+    pollDeviceToken(j.device_code, (j.interval||5), Date.now()+((j.expires_in||900)*1000));
+  }catch(e){ card.innerHTML=`<div style="color:var(--warn);font-size:12.5px">Falha ao conectar no servidor: ${esc(e.message||e)}</div>`; }
+}
+function pollDeviceToken(deviceCode, interval, deadline){
+  ghDevicePoll=setTimeout(async ()=>{
+    if(Date.now()>deadline){ const w=document.getElementById("ghLoginWait"); if(w){ w.textContent="⌛ o código expirou — clique em ⚡ Entrar com GitHub de novo."; w.style.color="var(--warn)"; } return; }
+    try{
+      const r=await fetch(mcpUrl()+"/panel/device/poll",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({device_code:deviceCode})});
+      const j=await r.json();
+      if(j.access_token){
+        setGithubToken(j.access_token);
+        if(j.login) localStorage.setItem(LS_KEY+"-ghlogin", j.login);
+        const card=document.getElementById("ghLoginCard");
+        if(card) card.innerHTML=`<div style="color:var(--ok);font-size:13px">✓ conectado como <b>@${esc(j.login||"você")}</b> — já pode gerenciar tudo por aqui.</div>`;
+        renderMembers();
+        return;
+      }
+      if(j.slow_down) interval=(j.interval||interval+5);
+      pollDeviceToken(deviceCode, interval, deadline); // pending → segue tentando
+    }catch(e){ pollDeviceToken(deviceCode, interval, deadline); }
+  }, Math.max(2,interval)*1000);
+}
 function setGithubToken(v){ DB.settings=DB.settings||{}; DB.settings.githubToken=(v||"").trim(); ghRepoListCache=null; localStorage.removeItem(LS_KEY+"-patexp"); save();
   const s=document.getElementById("ghTokenStatus"); if(s) s.textContent=DB.settings.githubToken?"✓ token salvo neste navegador":""; }
 function openAiModal(){ renderProvs(); document.getElementById("provForm").style.display="none";
