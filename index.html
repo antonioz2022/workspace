@@ -1,0 +1,1818 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workspace — Mapa de Comando</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#07090f;
+    --glass:rgba(16,20,30,.72);
+    --glass2:rgba(255,255,255,.07);
+    --line:rgba(255,255,255,.09);
+    --line2:rgba(255,255,255,.18);
+    --tx:#eef2f9; --tx2:#a7b2c5; --tx3:#5f6b80;
+    --ac:#6d8dff; --ac2:#9db3ff;
+    --ok:#3ddc84; --warn:#ffce54; --bad:#ff6b5e; --gold:#ffd479;
+  }
+  *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
+  html,body{height:100%; overflow:hidden}
+  body{background:var(--bg); color:var(--tx); font:15px/1.6 'Outfit',system-ui,sans-serif}
+  ::selection{background:rgba(109,141,255,.35)}
+  ::-webkit-scrollbar{width:9px}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.13); border-radius:99px}
+
+  /* ===== fundo ===== */
+  .aurora{position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none}
+  .blob{position:absolute; border-radius:50%; filter:blur(120px); opacity:.45; animation:drift 30s ease-in-out infinite alternate}
+  .b1{width:55vw;height:55vw; background:radial-gradient(circle,#1d2f6f 0%,transparent 65%); top:-20vw; left:-14vw}
+  .b2{width:46vw;height:46vw; background:radial-gradient(circle,#0f3830 0%,transparent 65%); bottom:-18vw; right:-10vw; animation-delay:-9s}
+  .b3{width:36vw;height:36vw; background:radial-gradient(circle,#37205c 0%,transparent 65%); top:34vh; left:58vw; animation-delay:-18s}
+  @keyframes drift{to{transform:translate(6vw,4vh) scale(1.16)}}
+
+  /* ===== canvas ===== */
+  #viewport{position:fixed; inset:0; z-index:1; cursor:grab; overflow:hidden; touch-action:none}
+  #viewport.panning{cursor:grabbing}
+  #world{position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform}
+  #gridDots{
+    position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.55;
+    background-image:radial-gradient(rgba(255,255,255,.06) 1.2px, transparent 1.2px);
+  }
+  svg#edges{position:absolute; left:0; top:0; width:10px; height:10px; overflow:visible; pointer-events:none}
+  .edge{fill:none; stroke-width:2; opacity:.5}
+  .edge.dim{opacity:.18}
+
+  /* ===== nós ===== */
+  .node{position:absolute; transform:translate(-50%,-50%); display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; user-select:none; z-index:3; transition:filter .2s}
+  .node .orb{
+    display:grid; place-items:center; border-radius:50%;
+    background:var(--glass); backdrop-filter:blur(14px);
+    border:1.5px solid var(--line2);
+    box-shadow:0 10px 34px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.14);
+    transition:transform .18s ease, box-shadow .18s ease, border-color .18s;
+    position:relative;
+  }
+  .node:hover .orb{transform:scale(1.07)}
+  .node.sel .orb{border-color:#fff}
+  .node.co .orb{width:104px;height:104px; font-size:44px}
+  .node.pj .orb{width:80px;height:80px; font-size:32px}
+  .node.ap .orb{width:62px;height:62px; font-size:15px; font-weight:750; color:#fff}
+  .node .halo{position:absolute; inset:-14px; border-radius:50%; filter:blur(22px); opacity:.4; z-index:-1; pointer-events:none}
+  .node .tag{
+    max-width:170px; text-align:center; font-size:13px; font-weight:650; line-height:1.3;
+    background:rgba(8,11,17,.72); backdrop-filter:blur(8px); border:1px solid var(--line);
+    padding:4px 12px; border-radius:99px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .node.ap .tag{font-size:12px; font-weight:550; color:var(--tx2)}
+  .node .sub{font-size:10.5px; color:var(--tx3); margin-top:-4px; letter-spacing:.6px; text-transform:uppercase; font-weight:600}
+  .expand-dot{
+    position:absolute; bottom:2px; right:2px; width:22px; height:22px; border-radius:50%;
+    background:linear-gradient(135deg,#5f7fff,#8a63ff); color:#fff; display:grid; place-items:center;
+    font-size:13px; font-weight:800; border:2px solid #0b0e15;
+  }
+  .sdot{position:absolute; top:4px; right:4px; width:12px;height:12px;border-radius:50%; border:2px solid #0b0e15}
+  .sdot.ok{background:var(--ok); box-shadow:0 0 8px var(--ok)}
+  .sdot.bad{background:var(--bad); box-shadow:0 0 8px var(--bad)}
+  .sdot.load{background:var(--warn); animation:pulse 1s infinite}
+  .sdot.alert{background:var(--warn); box-shadow:0 0 8px var(--warn)}
+  @keyframes pulse{50%{opacity:.3}}
+  .node.enter{animation:nodePop .3s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes nodePop{from{opacity:0; transform:translate(-50%,-50%) scale(.4)} to{opacity:1; transform:translate(-50%,-50%) scale(1)}}
+
+  /* ===== HUD topo ===== */
+  .hud{
+    position:fixed; top:18px; left:18px; z-index:10; display:flex; align-items:center; gap:14px;
+    background:var(--glass); backdrop-filter:blur(20px); border:1px solid var(--line);
+    border-radius:16px; padding:12px 18px; box-shadow:0 10px 34px rgba(0,0,0,.4);
+  }
+  .hud .cube{width:36px;height:36px; border-radius:11px; display:grid; place-items:center; font-weight:800; color:#fff;
+    background:linear-gradient(135deg,#6d8dff,#a56bff 60%,#ff6bd6); box-shadow:0 0 20px rgba(120,110,255,.4)}
+  .hud h1{font-size:16.5px; font-weight:750; line-height:1.1}
+  .hud small{color:var(--tx3); font-size:10.5px; letter-spacing:1.6px; text-transform:uppercase; font-weight:600}
+  .hud .sep{width:1px; height:30px; background:var(--line)}
+  .hud .m{text-align:center; padding:0 4px}
+  .hud .m b{display:block; font-size:15.5px; font-weight:750}
+  .hud .m span{font-size:9.5px; color:var(--tx3); text-transform:uppercase; letter-spacing:1px; font-weight:600}
+
+  .btn{
+    background:var(--glass2); color:var(--tx); border:1px solid var(--line);
+    border-radius:11px; padding:8px 15px; cursor:pointer; font-size:13px;
+    font-family:inherit; font-weight:600; transition:.16s;
+  }
+  .btn:hover{border-color:var(--ac); color:var(--ac2)}
+  .btn.primary{background:linear-gradient(135deg,#5f7fff,#8a63ff); border:none; color:#fff; box-shadow:0 4px 16px rgba(110,110,255,.35)}
+  .btn.primary:hover{filter:brightness(1.12); color:#fff}
+  .btn.ghost{background:transparent; border-color:transparent; color:var(--tx3)}
+  .btn.ghost:hover{color:var(--bad)}
+  .btn.sm{padding:5px 11px; font-size:12px; border-radius:9px}
+
+  .topright{position:fixed; top:18px; right:18px; z-index:10; display:flex; gap:9px}
+
+  /* ===== controles zoom ===== */
+  .zoomctl{
+    position:fixed; bottom:20px; left:18px; z-index:10; display:flex; align-items:center; gap:4px;
+    background:var(--glass); backdrop-filter:blur(20px); border:1px solid var(--line);
+    border-radius:13px; padding:6px; box-shadow:0 10px 30px rgba(0,0,0,.4);
+  }
+  .zoomctl button{background:transparent; border:none; color:var(--tx2); width:34px; height:34px; border-radius:9px; cursor:pointer; font-size:17px; font-family:inherit}
+  .zoomctl button:hover{background:var(--glass2); color:var(--tx)}
+  .zoomctl .pct{font-size:12px; color:var(--tx3); min-width:44px; text-align:center; font-family:'JetBrains Mono',monospace}
+  .helper{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:9;
+    color:var(--tx3); font-size:12px; letter-spacing:.4px; pointer-events:none;
+    background:rgba(8,11,17,.55); padding:6px 16px; border-radius:99px; backdrop-filter:blur(8px);
+  }
+
+  /* ===== drawer ===== */
+  .drawer{
+    position:fixed; top:0; right:0; bottom:0; width:400px; max-width:94vw; z-index:20;
+    background:rgba(13,17,26,.88); backdrop-filter:blur(28px);
+    border-left:1px solid var(--line2); box-shadow:-30px 0 70px rgba(0,0,0,.5);
+    transform:translateX(105%); transition:transform .28s cubic-bezier(.2,.9,.3,1);
+    display:flex; flex-direction:column;
+  }
+  .drawer.open{transform:none}
+  .dr-head{padding:22px 24px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:14px}
+  .dr-emoji{width:52px;height:52px; border-radius:15px; display:grid; place-items:center; font-size:25px; background:var(--glass2); border:1px solid var(--line2); flex:none}
+  .dr-head h3{font-size:18px; font-weight:750; line-height:1.25}
+  .dr-head .k{font-size:11px; color:var(--tx3); text-transform:uppercase; letter-spacing:1.4px; font-weight:650}
+  .dr-close{margin-left:auto; background:transparent; border:none; color:var(--tx3); font-size:20px; cursor:pointer; padding:6px}
+  .dr-close:hover{color:var(--tx)}
+  .dr-body{padding:20px 24px; overflow-y:auto; flex:1}
+  .dr-sec{font-size:11px; font-weight:700; letter-spacing:1.6px; text-transform:uppercase; color:var(--tx2); margin:18px 0 10px; display:flex; align-items:center; gap:8px}
+  .dr-sec::before{content:""; width:18px; height:2px; background:linear-gradient(90deg,var(--ac),transparent); border-radius:2px}
+  .dr-desc{color:var(--tx2); font-size:14px}
+  .chips{display:flex; gap:7px; flex-wrap:wrap}
+  .chip{background:rgba(255,255,255,.07); border-radius:99px; padding:3.5px 12px; font-size:12px; color:var(--tx2); font-weight:550}
+  .chip.cost{color:var(--gold)}
+  .chip.alert{color:#ffab9d; background:rgba(255,107,94,.12)}
+  .chip.st{font-family:'JetBrains Mono',monospace}
+  .notes{
+    font-size:12.5px; color:var(--tx2); padding:12px 14px; background:rgba(0,0,0,.3);
+    border-radius:12px; white-space:pre-wrap; font-family:'JetBrains Mono',monospace;
+    line-height:1.6; border:1px solid rgba(255,255,255,.05)
+  }
+  a.link{
+    color:var(--ac2); text-decoration:none; font-size:13px; font-weight:600;
+    background:rgba(109,141,255,.12); padding:8px 15px; border-radius:10px;
+    border:1px solid rgba(109,141,255,.18); display:inline-block; transition:.15s
+  }
+  a.link:hover{background:rgba(109,141,255,.24)}
+  .dr-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; gap:9px}
+  .mini-list{display:flex; flex-direction:column; gap:6px}
+  .mini-item{
+    display:flex; align-items:center; gap:10px; background:var(--glass2); border:1px solid var(--line);
+    padding:9px 13px; border-radius:11px; cursor:pointer; font-size:13.5px; font-weight:550; transition:.15s
+  }
+  .mini-item:hover{border-color:var(--ac)}
+  .mini-item .mi-emoji{font-size:17px}
+  .mini-item .arrow{margin-left:auto; color:var(--tx3)}
+
+  .todo-item{display:flex; align-items:center; gap:11px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13.5px}
+  .todo-item:last-of-type{border:none}
+  .todo-item .cb{width:18px;height:18px; border-radius:6px; border:1.5px solid var(--tx3); cursor:pointer; display:grid; place-items:center; font-size:11px; color:transparent; flex:none; transition:.15s}
+  .todo-item.done .cb{background:linear-gradient(135deg,#5f7fff,#8a63ff); border-color:transparent; color:#fff}
+  .todo-item.done span.t{color:var(--tx3); text-decoration:line-through}
+  .todo-item .x{margin-left:auto; color:var(--tx3); cursor:pointer; opacity:.4}
+  .todo-item .x:hover{color:var(--bad); opacity:1}
+  .todo-add{display:flex; gap:8px; margin-top:10px}
+  .todo-add input{flex:1; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:10px; color:var(--tx); padding:8px 12px; font-size:13px; font-family:inherit}
+  .todo-add input:focus{outline:none; border-color:var(--ac)}
+
+  /* ===== chat ===== */
+  .drawer.wide{width:560px}
+  .chat-head{display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line)}
+  .chat-head .back{background:transparent; border:none; color:var(--tx2); font-size:18px; cursor:pointer; padding:4px 8px; border-radius:8px}
+  .chat-head .back:hover{background:var(--glass2); color:var(--tx)}
+  .chat-head h3{font-size:15px; font-weight:700; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .chat-head select{
+    background:rgba(0,0,0,.35); border:1px solid var(--line); border-radius:9px; color:var(--tx);
+    padding:5px 8px; font-size:12px; font-family:inherit; max-width:150px;
+  }
+  .chat-msgs{flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:12px}
+  .bub{max-width:86%; padding:11px 15px; border-radius:16px; font-size:14px; line-height:1.55; white-space:pre-wrap; word-break:break-word}
+  .bub.user{align-self:flex-end; background:linear-gradient(135deg,#5f7fff,#8a63ff); color:#fff; border-bottom-right-radius:5px}
+  .bub.ai{align-self:flex-start; background:var(--glass2); border:1px solid var(--line); border-bottom-left-radius:5px}
+  .bub.err{align-self:center; background:rgba(255,107,94,.12); color:#ffab9d; font-size:12.5px; border-radius:10px}
+  .bub .meta{display:block; font-size:10.5px; color:var(--tx3); margin-top:6px; font-family:'JetBrains Mono',monospace}
+  .bub code{background:rgba(0,0,0,.35); padding:1px 6px; border-radius:6px; font-family:'JetBrains Mono',monospace; font-size:12.5px}
+  .bub pre{background:rgba(0,0,0,.4); padding:10px 12px; border-radius:10px; overflow-x:auto; font-family:'JetBrains Mono',monospace; font-size:12.5px; margin:6px 0}
+  .ctxbar{padding:9px 16px; border-top:1px solid var(--line); display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+  .ctxbar .lbl{font-size:10.5px; color:var(--tx3); text-transform:uppercase; letter-spacing:1px; font-weight:650; margin-right:2px}
+  .ctxchip{
+    border-radius:99px; padding:3px 11px; font-size:11.5px; cursor:pointer; font-weight:600;
+    background:rgba(255,255,255,.05); color:var(--tx3); border:1px solid var(--line); transition:.15s; user-select:none
+  }
+  .ctxchip.on{background:rgba(109,141,255,.16); color:var(--ac2); border-color:rgba(109,141,255,.4)}
+  .ctxchip.lock{opacity:.85; cursor:default}
+  .composer{display:flex; gap:9px; padding:13px 16px; border-top:1px solid var(--line); align-items:flex-end}
+  .composer textarea{
+    flex:1; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:13px;
+    color:var(--tx); padding:11px 14px; font-size:14px; font-family:inherit; resize:none;
+    min-height:44px; max-height:130px;
+  }
+  .composer textarea:focus{outline:none; border-color:var(--ac)}
+  .composer .send{
+    width:44px; height:44px; border-radius:13px; border:none; cursor:pointer; font-size:17px;
+    background:linear-gradient(135deg,#5f7fff,#8a63ff); color:#fff; box-shadow:0 4px 16px rgba(110,110,255,.35); flex:none
+  }
+  .composer .send:disabled{opacity:.45; cursor:default}
+  .chat-item{display:flex; align-items:center; gap:10px; background:var(--glass2); border:1px solid var(--line);
+    padding:9px 13px; border-radius:11px; cursor:pointer; font-size:13px; font-weight:550; transition:.15s}
+  .chat-item:hover{border-color:var(--ac)}
+  .chat-item .cinfo{flex:1; min-width:0}
+  .chat-item .ctitle{white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .chat-item .cmeta{font-size:10.5px; color:var(--tx3); font-family:'JetBrains Mono',monospace}
+  .chat-item .del{color:var(--tx3); padding:2px 6px; opacity:.5}
+  .chat-item .del:hover{color:var(--bad); opacity:1}
+  .typing{display:inline-flex; gap:4px; padding:4px 2px}
+  .typing i{width:6px;height:6px;border-radius:50%;background:var(--tx3); animation:tp 1s infinite}
+  .typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+  @keyframes tp{40%{transform:translateY(-4px); background:var(--ac2)}}
+  .prov-item{display:flex; align-items:center; gap:11px; background:var(--glass2); border:1px solid var(--line);
+    padding:10px 14px; border-radius:12px; margin-bottom:8px}
+  .prov-item .pi{flex:1}
+  .prov-item .pname{font-weight:700; font-size:14px}
+  .prov-item .pmeta{font-size:11.5px; color:var(--tx3); font-family:'JetBrains Mono',monospace}
+
+  /* ===== modais ===== */
+  .overlay{position:fixed; inset:0; background:rgba(3,5,9,.78); backdrop-filter:blur(6px); display:none; place-items:center; z-index:50}
+  .overlay.open{display:grid}
+  .modal{
+    background:rgba(16,20,30,.94); border:1px solid var(--line2); border-radius:20px;
+    padding:28px; width:min(520px,94vw); max-height:92vh; overflow:auto;
+    box-shadow:0 30px 80px rgba(0,0,0,.6); animation:pop .22s cubic-bezier(.2,1.4,.4,1);
+  }
+  @keyframes pop{from{transform:scale(.95); opacity:0}}
+  .modal h3{margin-bottom:18px; font-size:18px; font-weight:750}
+  .f{margin-bottom:13px}
+  .f label{display:block; font-size:12px; color:var(--tx2); margin-bottom:5px; font-weight:600}
+  .f input,.f textarea,.f select{
+    width:100%; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px;
+    color:var(--tx); padding:10px 13px; font-size:14px; font-family:inherit;
+  }
+  .f input:focus,.f textarea:focus,.f select:focus{outline:none; border-color:var(--ac); box-shadow:0 0 0 3px rgba(109,141,255,.15)}
+  .f textarea{min-height:74px; resize:vertical}
+  .f-row{display:flex; gap:12px}
+  .f-row .f{flex:1}
+  .modal-foot{display:flex; justify-content:flex-end; gap:10px; margin-top:18px}
+</style>
+</head>
+<body>
+
+<div class="aurora"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+<div id="gridDots"></div>
+
+<div id="viewport">
+  <div id="world">
+    <svg id="edges"></svg>
+    <div id="nodes"></div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div class="hud">
+  <div class="cube">◆</div>
+  <div><h1>Workspace</h1><small>mapa de comando</small></div>
+  <div class="sep"></div>
+  <div class="m"><b id="hudCos">0</b><span>empresas</span></div>
+  <div class="m"><b id="hudPjs">0</b><span>projetos</span></div>
+  <div class="m"><b id="hudCost">$0</b><span>/mês</span></div>
+  <div class="m"><b id="hudPend">0</b><span>pendências</span></div>
+</div>
+
+<div class="topright">
+  <button class="btn" id="brainBtn" onclick="connectBrainClick()">🧠 Conectar cérebro</button>
+  <button class="btn" onclick="exportData()">⬇ Backup</button>
+  <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Restaurar</button>
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+  <button class="btn primary" onclick="openCoModal()">＋ Nova empresa</button>
+</div>
+
+<div class="zoomctl">
+  <button onclick="zoomBy(-.18)">−</button>
+  <span class="pct" id="zoomPct">100%</span>
+  <button onclick="zoomBy(.18)">＋</button>
+  <button onclick="fitView()" title="centralizar">⌂</button>
+</div>
+<div class="helper">arraste o fundo pra navegar · scroll pra zoom · clique nos nós pra expandir · arraste um nó pra reposicionar</div>
+
+<!-- DRAWER -->
+<div class="drawer" id="drawer">
+  <div id="drawerStd" style="display:contents">
+    <div class="dr-head">
+      <div class="dr-emoji" id="drEmoji">🏢</div>
+      <div><div class="k" id="drKind">empresa</div><h3 id="drTitle">—</h3></div>
+      <button class="dr-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="dr-body" id="drBody"></div>
+    <div class="dr-foot" id="drFoot"></div>
+  </div>
+  <div id="drawerChat" style="display:none; flex-direction:column; height:100%">
+    <div class="chat-head">
+      <button class="back" onclick="backFromChat()" title="voltar">←</button>
+      <h3 id="chTitle">chat</h3>
+      <select id="chProv" onchange="chatProvChanged()" title="conta de IA"></select>
+      <select id="chModel" onchange="chatModelChanged()" title="modelo"></select>
+      <button class="dr-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="chat-msgs" id="chMsgs"></div>
+    <div class="ctxbar" id="chCtx"></div>
+    <div class="composer">
+      <textarea id="chInput" rows="1" placeholder="mensagem… (Enter envia · Shift+Enter quebra linha)" onkeydown="chKey(event)"></textarea>
+      <button class="send" id="chSend" onclick="sendChat()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAIS -->
+<div class="overlay" id="coModal"><div class="modal">
+  <h3 id="coModalTitle">Nova empresa</h3>
+  <div class="f-row">
+    <div class="f" style="flex:0 0 86px"><label>Emoji</label><input id="coEmoji" placeholder="🏢" maxlength="4"></div>
+    <div class="f"><label>Nome</label><input id="coName"></div>
+  </div>
+  <div class="f"><label>Descrição curta</label><input id="coDesc"></div>
+  <div class="f"><label>Cor</label><input id="coColor" type="color" value="#6d8dff" style="height:44px;padding:5px"></div>
+  <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
+    <input type="file" id="coImgFile" accept="image/*" onchange="pickLogo(event,'co')">
+    <div id="coImgPrev" style="margin-top:8px"></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveCo()">Salvar</button></div>
+</div></div>
+
+<div class="overlay" id="pjModal"><div class="modal">
+  <h3 id="pjModalTitle">Novo projeto</h3>
+  <div class="f-row">
+    <div class="f" style="flex:0 0 86px"><label>Emoji</label><input id="pjEmoji" placeholder="🚀" maxlength="4"></div>
+    <div class="f"><label>Nome</label><input id="pjName"></div>
+  </div>
+  <div class="f"><label>Descrição</label><input id="pjDesc"></div>
+  <div class="f"><label>Status</label>
+    <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
+  </div>
+  <div class="f"><label>Repositório GitHub (owner/repo — opcional; usado no modo remoto)</label><input id="pjGithub" placeholder="ex.: antonioz2022/DragonblockGP"></div>
+  <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
+    <input type="file" id="pjImgFile" accept="image/*" onchange="pickLogo(event,'pj')">
+    <div id="pjImgPrev" style="margin-top:8px"></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="savePj()">Salvar</button></div>
+</div></div>
+
+<div class="overlay" id="aiModal"><div class="modal" style="width:min(600px,94vw)">
+  <h3>⚙ Contas de IA</h3>
+  <p style="color:var(--tx2); font-size:13px; margin:-8px 0 16px">
+    Cadastre suas contas/provedores. Cada chat escolhe qual conta e modelo usar — e dá pra trocar no meio da conversa.
+    As chaves ficam <b>somente neste navegador</b> (localStorage).
+  </p>
+  <div id="provList"></div>
+  <div style="display:flex; gap:8px; margin:14px 0 20px">
+    <button class="btn sm primary" onclick="openProvForm()">＋ Nova conta</button>
+    <button class="btn sm" onclick="openProvForm('anthropic')">+ Claude (Anthropic)</button>
+    <button class="btn sm" onclick="openProvForm('groq')">+ Groq</button>
+  </div>
+  <div id="provForm" style="display:none; border-top:1px solid var(--line); padding-top:16px">
+    <div class="f-row">
+      <div class="f"><label>Nome da conta (ex.: Claude — pessoal)</label><input id="pvName"></div>
+      <div class="f" style="flex:0 0 170px"><label>Tipo</label>
+        <select id="pvKind" onchange="pvKindChanged()">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI-compatível</option>
+        </select>
+      </div>
+    </div>
+    <div class="f" id="pvBaseWrap" style="display:none"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
+    <div class="f"><label>API Key</label><input id="pvKey" type="password" placeholder="sk-..."></div>
+    <div class="f"><label>Modelos (separados por vírgula — o 1º é o padrão)</label><input id="pvModels"></div>
+    <div class="modal-foot" style="margin-top:6px">
+      <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
+      <button class="btn primary" onclick="saveProv()">Salvar conta</button>
+    </div>
+  </div>
+  <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:2px">
+    <h3 style="font-size:15px; margin:0 0 4px">🐙 GitHub (modo remoto · multi-dispositivo)</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
+      Token pessoal <b>fine-grained</b> (escopo <b>Contents: read-only</b>) dos repositórios. Deixa o painel ler o estado remoto quando você não está no PC. Fica <b>só neste navegador</b>.
+    </p>
+    <input id="ghTokenInput" type="password" placeholder="github_pat_..." oninput="setGithubToken(this.value)" style="width:100%">
+    <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="closeModals()">Fechar</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="appModal"><div class="modal">
+  <h3 id="appModalTitle">Novo serviço</h3>
+  <div class="f"><label>Nome</label><input id="apName"></div>
+  <div class="f"><label>Função</label><input id="apRole"></div>
+  <div class="f-row">
+    <div class="f"><label>Plano</label><input id="apPlan"></div>
+    <div class="f" style="flex:0 0 140px"><label>Custo/mês (US$)</label><input id="apCost" type="number" step="0.01" value="0"></div>
+  </div>
+  <div class="f"><label>Link do painel</label><input id="apDash"></div>
+  <div class="f"><label>Link do serviço</label><input id="apUrl"></div>
+  <div class="f"><label>Health check (pinga e mostra status)</label><input id="apHealth"></div>
+  <div class="f"><label>Notas</label><textarea id="apNotes"></textarea></div>
+  <div class="f"><label>Alerta</label><input id="apAlert"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveApp()">Salvar</button></div>
+</div></div>
+
+<script>
+/* ================= SEED ================= */
+const SEED = { version: 5, companies: [] };
+
+/* ================= estado ================= */
+const LS_KEY = "workspace-map-v3";
+let DB = load();
+let cam = JSON.parse(localStorage.getItem(LS_KEY+"-cam") || "null") || {x:0, y:0, z:1};
+let expanded = new Set(JSON.parse(localStorage.getItem(LS_KEY+"-exp") || "[]"));
+let sel = null;           // {type:'co'|'pj'|'ap', co, pj, ap}
+let editingCo=null, editingPj=null, editingApp=null;
+const pingCache = {};     // id -> {cls, txt}
+
+function migrate(db){
+  // v4 (02/07): identidade da Blockyfy — desc "Estúdio de Games" + logos em
+  // assets/ pros nós da Blockyfy e do Dragon Block Galactic.
+  if((db.version||3) < 4){
+    const b=db.companies.find(c=>c.id==="blockyfy");
+    if(b){
+      b.desc="Estúdio de Games"; b.color="#59d99d";
+      b.img="assets/blockyfy_logo.png"; b.imgFit="cover";
+      const p=b.projects.find(x=>x.id==="dragon-block-galactic");
+      if(p){ p.img="assets/dbg_logo.png"; p.imgFit="contain"; }
+    }
+    db.version=4;
+  }
+  // v5 (02/07): IA — contas/provedores, chats por projeto e memória de projeto.
+  if(db.version < 5){
+    db.settings = db.settings || {};
+    db.settings.providers = db.settings.providers || [];
+    db.companies.forEach(c=>c.projects.forEach(p=>{
+      p.chats = p.chats || [];
+      p.context = p.context || "";
+    }));
+    db.version=5;
+  }
+  return db;
+}
+function load(){
+  try{ const raw=localStorage.getItem(LS_KEY); if(raw) return migrate(JSON.parse(raw)); }catch(e){}
+  return migrate(JSON.parse(JSON.stringify(SEED)));
+}
+function save(){
+  localStorage.setItem(LS_KEY, JSON.stringify(DB));
+  localStorage.setItem(LS_KEY+"-cam", JSON.stringify(cam));
+  localStorage.setItem(LS_KEY+"-exp", JSON.stringify([...expanded]));
+}
+const uid=()=>Math.random().toString(36).slice(2,9);
+const esc=s=>(s??"").toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const pjCost=p=>p.apps.reduce((s,a)=>s+(parseFloat(a.cost)||0),0);
+const coCost=c=>c.projects.reduce((s,p)=>s+pjCost(p),0);
+
+/* ================= layout ================= */
+function ensurePositions(){
+  DB.companies.forEach((c,ci)=>{
+    if(c.x==null){ c.x = ci*760 - (DB.companies.length-1)*380; c.y = (ci%2)*140 - 40; }
+    const pn = c.projects.length;
+    c.projects.forEach((p,pi)=>{
+      if(p.x==null){
+        const spread = Math.min(Math.PI*0.9, Math.max(1, pn)*0.75);
+        const a = Math.PI/2 - spread/2 + (pi+0.5)*(spread/Math.max(pn,1));
+        p.x = c.x + Math.cos(a)*300;
+        p.y = c.y + Math.sin(a)*300;
+      }
+      const an = p.apps.length;
+      const base = Math.atan2(p.y-c.y, p.x-c.x);
+      p.apps.forEach((ap,ai)=>{
+        if(ap.x==null){
+          const spread = Math.min(Math.PI*1.7, Math.max(an,1)*0.72);
+          const a = base - spread/2 + (ai+0.5)*(spread/Math.max(an,1));
+          const dist = 250 + (ai%2)*80;
+          ap.x = p.x + Math.cos(a)*dist;
+          ap.y = p.y + Math.sin(a)*dist;
+        }
+      });
+    });
+  });
+}
+
+/* ================= render ================= */
+const worldEl=document.getElementById("world");
+const nodesEl=document.getElementById("nodes");
+const edgesEl=document.getElementById("edges");
+const newborn = new Set();
+
+function applyCam(){
+  worldEl.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.z})`;
+  document.getElementById("zoomPct").textContent = Math.round(cam.z*100)+"%";
+  document.getElementById("gridDots").style.backgroundSize = (26*cam.z)+"px "+(26*cam.z)+"px";
+  document.getElementById("gridDots").style.backgroundPosition = cam.x+"px "+cam.y+"px";
+}
+
+function render(){
+  ensurePositions();
+  let nodesHtml="", edgesHtml="";
+
+  DB.companies.forEach(c=>{
+    const coOpen = expanded.has(c.id);
+    nodesHtml += nodeHtml("co", c, c, null, null);
+    if(coOpen){
+      c.projects.forEach(p=>{
+        edgesHtml += edgeHtml(c.x,c.y,p.x,p.y,c.color,1);
+        nodesHtml += nodeHtml("pj", p, c, p, null);
+        if(expanded.has(p.id)){
+          p.apps.forEach(ap=>{
+            edgesHtml += edgeHtml(p.x,p.y,ap.x,ap.y,c.color,0);
+            nodesHtml += nodeHtml("ap", ap, c, p, ap);
+          });
+        }
+      });
+    }
+  });
+  edgesEl.innerHTML = edgesHtml;
+  nodesEl.innerHTML = nodesHtml;
+  newborn.clear();
+  updateHud();
+  applyCam();
+  // pings
+  DB.companies.forEach(c=>c.projects.forEach(p=>p.apps.forEach(a=>{
+    if(a.health && expanded.has(c.id) && expanded.has(p.id)) ping(a);
+  })));
+}
+
+function edgeHtml(x1,y1,x2,y2,color,thick){
+  const mx=(x1+x2)/2, my=(y1+y2)/2;
+  const dx=x2-x1, dy=y2-y1;
+  const bend = 0.18;
+  const cx = mx - dy*bend, cy = my + dx*bend;
+  return `<path class="edge ${thick?'':'dim'}" stroke="${esc(color)}" d="M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}"/>`;
+}
+
+function nodeHtml(type, item, c, p, ap){
+  const id = item.id;
+  const isSel = sel && sel.id===id;
+  const enter = newborn.has(id) ? "enter" : "";
+  let inner="", tag="", sub="", extra="";
+  if(type==="co"){
+    inner = orbInner(c, "🏢");
+    tag = esc(c.name);
+    sub = c.projects.length+" projeto"+(c.projects.length===1?"":"s");
+    extra = `<div class="halo" style="background:${esc(c.color)}"></div>
+             <div class="expand-dot">${expanded.has(id)?"−":"+"}</div>`;
+  }else if(type==="pj"){
+    inner = orbInner(p, "🚀");
+    tag = esc(p.name);
+    sub = p.apps.length+" serviço"+(p.apps.length===1?"":"s");
+    const stc = p.status==="ativo"?"ok":(p.status==="pausado"?"alert":"na");
+    extra = `<div class="halo" style="background:${esc(c.color)}; opacity:.25"></div>
+             <span class="sdot ${stc}"></span>
+             <div class="expand-dot">${expanded.has(id)?"−":"+"}</div>`;
+  }else{
+    const ic = iconFor(ap.name);
+    inner = `<span style="background:linear-gradient(135deg,${ic.bg},${ic.bg}cc); width:100%; height:100%; border-radius:50%; display:grid; place-items:center">${esc(ic.txt)}</span>`;
+    tag = esc(ap.name);
+    const pc = pingCache[ap.id];
+    const dotCls = ap.health ? (pc?pc.cls:"load") : (ap.alert?"alert":"");
+    if(dotCls) extra = `<span class="sdot ${dotCls}" id="nd-${ap.id}"></span>`;
+  }
+  return `
+  <div class="node ${type} ${isSel?'sel':''} ${enter}" data-id="${id}" data-type="${type}" style="left:${item.x}px; top:${item.y}px">
+    <div class="orb">${inner}${extra}</div>
+    <div class="tag">${tag}</div>
+    ${sub?`<div class="sub">${sub}</div>`:""}
+  </div>`;
+}
+
+function iconFor(name){
+  const n=(name||"?").trim();
+  const palette=["#5f7fff","#8a63ff","#ff8b3d","#12b8a0","#ff5e7a","#eab308","#a855f7","#3ddc84"];
+  let h=0; for(const ch of n) h=(h*31+ch.charCodeAt(0))>>>0;
+  return {bg:palette[h%palette.length], txt:n.replace(/[^\p{L}\p{N} ]/gu,"").trim().slice(0,2).toUpperCase()||"?"};
+}
+
+function orbInner(item, fallback){
+  if(item.img){
+    const contain = item.imgFit==="contain";
+    return `<img src="${esc(item.img)}" draggable="false" alt=""
+      style="width:100%; height:100%; border-radius:50%; pointer-events:none;
+             object-fit:${contain?"contain":"cover"}; ${contain?"padding:9px;":""}"
+      onerror="this.remove()">`;
+  }
+  return esc(item.emoji||fallback);
+}
+function drawerIcon(item, fallback){
+  if(item.img){
+    const contain = item.imgFit==="contain";
+    return `<img src="${esc(item.img)}" alt=""
+      style="width:100%; height:100%; border-radius:14px;
+             object-fit:${contain?"contain":"cover"}; ${contain?"padding:5px;":""}"
+      onerror="this.remove()">`;
+  }
+  return esc(item.emoji||fallback);
+}
+
+function updateHud(){
+  document.getElementById("hudCos").textContent = DB.companies.length;
+  document.getElementById("hudPjs").textContent = DB.companies.reduce((s,c)=>s+c.projects.length,0);
+  document.getElementById("hudCost").textContent = "$"+DB.companies.reduce((s,c)=>s+coCost(c),0).toFixed(0);
+  document.getElementById("hudPend").textContent = DB.companies.reduce((s,c)=>s+c.projects.reduce((q,p)=>q+p.todos.filter(t=>!t.done).length,0),0);
+}
+
+/* ================= interação: pan / zoom / drag ================= */
+const vp=document.getElementById("viewport");
+let panState=null, dragState=null, moved=false;
+
+vp.addEventListener("pointerdown", e=>{
+  const nodeEl = e.target.closest(".node");
+  moved=false;
+  if(nodeEl){
+    const id=nodeEl.dataset.id;
+    const found=findNode(id);
+    if(found){
+      dragState={item:found.item, sx:e.clientX, sy:e.clientY, ox:found.item.x, oy:found.item.y, el:nodeEl};
+      vp.setPointerCapture(e.pointerId);
+    }
+  }else{
+    panState={sx:e.clientX, sy:e.clientY, ox:cam.x, oy:cam.y};
+    vp.classList.add("panning");
+    vp.setPointerCapture(e.pointerId);
+  }
+});
+vp.addEventListener("pointermove", e=>{
+  if(dragState){
+    const dx=(e.clientX-dragState.sx)/cam.z, dy=(e.clientY-dragState.sy)/cam.z;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) moved=true;
+    dragState.item.x=dragState.ox+dx; dragState.item.y=dragState.oy+dy;
+    dragState.el.style.left=dragState.item.x+"px";
+    dragState.el.style.top=dragState.item.y+"px";
+    redrawEdgesOnly();
+  }else if(panState){
+    const dx=e.clientX-panState.sx, dy=e.clientY-panState.sy;
+    if(Math.abs(dx)>3||Math.abs(dy)>3) moved=true;
+    cam.x=panState.ox+dx; cam.y=panState.oy+dy;
+    applyCam();
+  }
+});
+vp.addEventListener("pointerup", e=>{
+  if(dragState){
+    const id=dragState.item.id ? (dragState.el.dataset.id) : null;
+    if(!moved && id) handleClick(id, dragState.el.dataset.type);
+    else save();
+    dragState=null;
+  }else if(panState){
+    panState=null; vp.classList.remove("panning");
+    save();
+  }
+});
+vp.addEventListener("wheel", e=>{
+  e.preventDefault();
+  const f = e.deltaY<0 ? 1.12 : 1/1.12;
+  zoomAt(e.clientX, e.clientY, f);
+},{passive:false});
+
+function zoomAt(px,py,f){
+  const nz=Math.min(2.6, Math.max(.25, cam.z*f));
+  const k=nz/cam.z;
+  cam.x = px - (px-cam.x)*k;
+  cam.y = py - (py-cam.y)*k;
+  cam.z = nz;
+  applyCam(); save();
+}
+function zoomBy(d){ zoomAt(innerWidth/2, innerHeight/2, 1+d); }
+function fitView(){
+  let xs=[], ys=[];
+  DB.companies.forEach(c=>{ xs.push(c.x); ys.push(c.y);
+    if(expanded.has(c.id)) c.projects.forEach(p=>{ xs.push(p.x); ys.push(p.y);
+      if(expanded.has(p.id)) p.apps.forEach(a=>{ xs.push(a.x); ys.push(a.y); }); }); });
+  if(!xs.length){ cam={x:innerWidth/2,y:innerHeight/2,z:1}; applyCam(); return; }
+  const minX=Math.min(...xs)-220, maxX=Math.max(...xs)+220;
+  const minY=Math.min(...ys)-200, maxY=Math.max(...ys)+200;
+  const z=Math.min(2, Math.min(innerWidth/(maxX-minX), innerHeight/(maxY-minY)));
+  cam.z=Math.max(.25,z);
+  cam.x=innerWidth/2 - (minX+maxX)/2*cam.z;
+  cam.y=innerHeight/2 - (minY+maxY)/2*cam.z;
+  applyCam(); save();
+}
+
+function redrawEdgesOnly(){
+  let html="";
+  DB.companies.forEach(c=>{
+    if(!expanded.has(c.id)) return;
+    c.projects.forEach(p=>{
+      html+=edgeHtml(c.x,c.y,p.x,p.y,c.color,1);
+      if(expanded.has(p.id)) p.apps.forEach(a=>html+=edgeHtml(p.x,p.y,a.x,a.y,c.color,0));
+    });
+  });
+  edgesEl.innerHTML=html;
+}
+
+function findNode(id){
+  for(const c of DB.companies){
+    if(c.id===id) return {type:"co", item:c, co:c};
+    for(const p of c.projects){
+      if(p.id===id) return {type:"pj", item:p, co:c, pj:p};
+      for(const a of p.apps) if(a.id===id) return {type:"ap", item:a, co:c, pj:p, ap:a};
+    }
+  }
+  return null;
+}
+
+function handleClick(id, type){
+  const f=findNode(id); if(!f) return;
+  if(type==="co"){
+    if(expanded.has(id)) { expanded.delete(id); f.co.projects.forEach(p=>expanded.delete(p.id)); }
+    else { expanded.add(id); f.co.projects.forEach(p=>newborn.add(p.id)); }
+  }
+  if(type==="pj"){
+    if(expanded.has(id)) expanded.delete(id);
+    else { expanded.add(id); f.pj.apps.forEach(a=>newborn.add(a.id)); }
+  }
+  sel={id, ...f};
+  save(); render(); openDrawer(f);
+}
+
+/* ================= drawer ================= */
+function openDrawer(f){
+  const d=document.getElementById("drawer");
+  const body=document.getElementById("drBody"), foot=document.getElementById("drFoot");
+  const kind=document.getElementById("drKind"), title=document.getElementById("drTitle"), em=document.getElementById("drEmoji");
+
+  if(f.type==="co"){
+    const c=f.co;
+    kind.textContent="empresa"; title.textContent=c.name; em.innerHTML=drawerIcon(c,"🏢");
+    body.innerHTML=`
+      <div class="dr-desc">${esc(c.desc||"")}</div>
+      <div class="dr-sec">Números</div>
+      <div class="chips">
+        <span class="chip">${c.projects.length} projeto(s)</span>
+        <span class="chip cost">~US$ ${coCost(c).toFixed(0)}/mês</span>
+        <span class="chip">${c.projects.reduce((s,p)=>s+p.todos.filter(t=>!t.done).length,0)} pendência(s)</span>
+      </div>
+      <div class="dr-sec">Projetos</div>
+      <div class="mini-list">
+        ${c.projects.map(p=>`
+          <div class="mini-item" onclick="jumpTo('${p.id}')">
+            <span class="mi-emoji">${p.img?`<img src="${esc(p.img)}" style="width:26px;height:26px;object-fit:contain;vertical-align:middle">`:esc(p.emoji||"🚀")}</span>${esc(p.name)}<span class="arrow">→</span>
+          </div>`).join("") || '<div class="dr-desc" style="color:var(--tx3)">nenhum projeto</div>'}
+      </div>
+      <div style="margin-top:14px"><button class="btn sm primary" onclick="openPjModalFor('${c.id}')">＋ Novo projeto</button></div>`;
+    foot.innerHTML=`
+      <button class="btn" onclick="openCoModal('${c.id}')">✎ Editar</button>
+      <button class="btn ghost" onclick="delCo('${c.id}')">Excluir empresa</button>`;
+  }
+
+  if(f.type==="pj"){
+    const c=f.co, p=f.pj;
+    kind.textContent="projeto · "+c.name; title.textContent=p.name; em.innerHTML=drawerIcon(p,"🚀");
+    body.innerHTML=`
+      <div class="chips" style="margin-bottom:12px">
+        <span class="chip" style="color:${p.status==='ativo'?'var(--ok)':(p.status==='pausado'?'var(--warn)':'var(--tx2)')}">● ${p.status||"ativo"}</span>
+        <span class="chip">${p.apps.length} serviço(s)</span>
+        <span class="chip cost">~US$ ${pjCost(p).toFixed(0)}/mês</span>
+      </div>
+      <div class="dr-desc">${esc(p.desc||"")}</div>
+      ${teleSectionHtml(c,p, teleCache[p.id]?"ready":"loading")}
+      <div class="dr-sec">🧠 Memória do projeto</div>
+      <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">
+        Estado vivo do projeto. Sincroniza com <b>Workspace/brain/</b> — suas IAs
+        (Claude Code, Codex…) leem e atualizam por lá.
+      </div>
+      <textarea id="pjMemory" style="width:100%; min-height:90px; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:10px 13px; font-size:13px; font-family:'JetBrains Mono',monospace; resize:vertical">${esc(p.context||"")}</textarea>
+      <div id="memBar" style="margin-top:8px"><button class="btn sm" onclick="saveMemory('${p.id}')">💾 Salvar memória</button></div>
+      <div class="dr-sec">Serviços</div>
+      <div class="mini-list">
+        ${p.apps.map(a=>`
+          <div class="mini-item" onclick="jumpTo('${a.id}')">
+            <span class="mi-emoji" style="font-size:13px; font-weight:700; color:#fff; background:${iconFor(a.name).bg}; width:24px;height:24px;border-radius:7px;display:grid;place-items:center">${esc(iconFor(a.name).txt)}</span>
+            ${esc(a.name)}<span class="arrow">→</span>
+          </div>`).join("") || '<div class="dr-desc" style="color:var(--tx3)">nenhum serviço</div>'}
+      </div>
+      <div style="margin-top:14px"><button class="btn sm primary" onclick="openAppModalFor('${p.id}')">＋ Adicionar serviço</button></div>
+      <div class="dr-sec">Pendências</div>
+      ${p.todos.map((t,i)=>`
+        <div class="todo-item ${t.done?'done':''}">
+          <span class="cb" onclick="toggleTodo('${p.id}',${i})">✓</span>
+          <span class="t">${esc(t.t)}</span>
+          <span class="x" onclick="delTodo('${p.id}',${i})">✕</span>
+        </div>`).join("")}
+      <div class="todo-add">
+        <input id="todoInput" placeholder="nova pendência…" onkeydown="if(event.key==='Enter')addTodo('${p.id}')">
+        <button class="btn sm" onclick="addTodo('${p.id}')">＋</button>
+      </div>`;
+    foot.innerHTML=`
+      <button class="btn" onclick="openPjModalFor('${c.id}','${p.id}')">✎ Editar</button>
+      <button class="btn ghost" onclick="delPj('${p.id}')">Excluir projeto</button>`;
+  }
+
+  if(f.type==="ap"){
+    const a=f.ap, ic=iconFor(a.name);
+    kind.textContent="serviço · "+f.pj.name; title.textContent=a.name;
+    em.innerHTML=`<span style="font-size:16px; font-weight:800; color:#fff; background:linear-gradient(135deg,${ic.bg},${ic.bg}cc); width:100%; height:100%; border-radius:15px; display:grid; place-items:center">${esc(ic.txt)}</span>`;
+    const pc=pingCache[a.id];
+    body.innerHTML=`
+      <div class="dr-desc">${esc(a.role||"")}</div>
+      <div class="dr-sec">Assinatura</div>
+      <div class="chips">
+        ${a.plan?`<span class="chip">${esc(a.plan)}</span>`:""}
+        <span class="chip cost">${(parseFloat(a.cost)||0)>0?"~US$ "+parseFloat(a.cost).toFixed(0)+"/mês":"grátis"}</span>
+        ${a.health?`<span class="chip st" id="drping">${pc?pc.txt:"verificando…"}</span>`:""}
+      </div>
+      ${a.alert?`<div class="chips" style="margin-top:8px"><span class="chip alert">⚠ ${esc(a.alert)}</span></div>`:""}
+      ${a.notes?`<div class="dr-sec">Notas</div><div class="notes">${esc(a.notes)}</div>`:""}
+      ${(a.dash||a.url)?`<div class="dr-sec">Acessos</div>
+        <div style="display:flex; gap:9px; flex-wrap:wrap">
+          ${a.dash?`<a class="link" href="${esc(a.dash)}" target="_blank">Abrir painel ↗</a>`:""}
+          ${a.url?`<a class="link" href="${esc(a.url)}" target="_blank">Abrir serviço ↗</a>`:""}
+        </div>`:""}`;
+    foot.innerHTML=`
+      <button class="btn" onclick="openAppModalFor('${f.pj.id}','${a.id}')">✎ Editar</button>
+      <button class="btn ghost" onclick="delApp('${a.id}')">Excluir serviço</button>`;
+    if(a.health) ping(a);
+  }
+  if(f.type==="pj") hydrateTele(f.co,f.pj);
+  d.classList.add("open");
+}
+function closeDrawer(){
+  if(typeof exitChatUi==="function" && curChat) exitChatUi();
+  document.getElementById("drawer").classList.remove("open");
+  sel=null; render();
+}
+function jumpTo(id){
+  const f=findNode(id); if(!f) return;
+  if(f.type==="pj"){ expanded.add(f.co.id); }
+  if(f.type==="ap"){ expanded.add(f.co.id); expanded.add(f.pj.id); }
+  sel={id, ...f};
+  // centraliza no nó
+  cam.x = innerWidth/2 - f.item.x*cam.z;
+  cam.y = innerHeight/2 - f.item.y*cam.z;
+  save(); render(); openDrawer(f);
+}
+
+/* ================= ping ================= */
+async function ping(a){
+  const upd=(cls,txt)=>{
+    pingCache[a.id]={cls,txt};
+    const nd=document.getElementById("nd-"+a.id); if(nd) nd.className="sdot "+cls;
+    const dp=document.getElementById("drping"); if(dp && sel && sel.id===a.id) dp.textContent=txt;
+  };
+  if(pingCache[a.id] && pingCache[a.id].fresh) return upd(pingCache[a.id].cls, pingCache[a.id].txt);
+  const t0=performance.now();
+  try{
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),65000);
+    const r=await fetch(a.health,{signal:ctl.signal}); clearTimeout(timer);
+    const ms=Math.round(performance.now()-t0);
+    if(r.ok){ upd("ok","online · "+ms+"ms"); } else { upd("bad","HTTP "+r.status); }
+  }catch(e){ upd("bad","offline"); }
+  if(pingCache[a.id]) pingCache[a.id].fresh=true;
+}
+
+/* ================= CRUD ================= */
+let pjTargetCo=null, apTargetPj=null;
+// undefined = não mexeu; null = remover; string = dataURL novo
+let pendingLogo={co:undefined, pj:undefined};
+
+function pickLogo(ev, kind){
+  const f=ev.target.files[0]; if(!f) return;
+  const img=new Image();
+  img.onload=()=>{
+    // reduz pra ~220px (cabe folgado no localStorage e no orbe)
+    const s=Math.min(1, 220/Math.max(img.width,img.height));
+    const cv=document.createElement("canvas");
+    cv.width=Math.max(1,Math.round(img.width*s)); cv.height=Math.max(1,Math.round(img.height*s));
+    cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+    pendingLogo[kind]=cv.toDataURL("image/png");
+    showLogoPrev(kind, pendingLogo[kind]);
+    URL.revokeObjectURL(img.src);
+  };
+  img.src=URL.createObjectURL(f);
+}
+function showLogoPrev(kind, src){
+  const el=document.getElementById(kind+"ImgPrev");
+  el.innerHTML = src
+    ? `<img src="${src}" style="height:52px; border-radius:11px; vertical-align:middle; background:rgba(0,0,0,.3); padding:3px"> <button type="button" class="btn sm ghost" onclick="clearLogo('${kind}')">tirar logo</button>`
+    : `<span style="color:var(--tx3); font-size:12px">sem logo — usa o emoji</span>`;
+}
+function clearLogo(kind){
+  pendingLogo[kind]=null;
+  const fi=document.getElementById(kind+"ImgFile"); if(fi) fi.value="";
+  showLogoPrev(kind, null);
+}
+
+function openCoModal(id){
+  editingCo=id||null;
+  document.getElementById("coModalTitle").textContent=id?"Editar empresa":"Nova empresa";
+  const c=id?findNode(id).co:null;
+  document.getElementById("coEmoji").value=c?(c.emoji||""):"";
+  document.getElementById("coName").value=c?c.name:"";
+  document.getElementById("coDesc").value=c?(c.desc||""):"";
+  document.getElementById("coColor").value=c?(c.color||"#6d8dff"):"#6d8dff";
+  pendingLogo.co=undefined;
+  document.getElementById("coImgFile").value="";
+  showLogoPrev("co", c&&c.img ? c.img : null);
+  document.getElementById("coModal").classList.add("open");
+}
+function saveCo(){
+  const name=document.getElementById("coName").value.trim();
+  if(!name) return alert("Dá um nome pra empresa.");
+  const data={emoji:document.getElementById("coEmoji").value.trim()||"🏢", name,
+    desc:document.getElementById("coDesc").value.trim(), color:document.getElementById("coColor").value};
+  if(pendingLogo.co!==undefined){ data.img = pendingLogo.co || ""; if(pendingLogo.co) data.imgFit="cover"; }
+  if(editingCo){ Object.assign(findNode(editingCo).co, data); }
+  else{
+    const id=uid();
+    const vx=(innerWidth/2-cam.x)/cam.z, vy=(innerHeight/2-cam.y)/cam.z;
+    DB.companies.push({id, ...data, x:vx, y:vy, projects:[]});
+    newborn.add(id);
+  }
+  save(); closeModals(); render();
+}
+function delCo(id){
+  const c=findNode(id).co;
+  if(!confirm(`Excluir "${c.name}" com todos os projetos?`)) return;
+  DB.companies=DB.companies.filter(x=>x.id!==id);
+  closeDrawer(); save(); render();
+}
+
+function openPjModalFor(coId, pjId){ pjTargetCo=coId; openPjModal(pjId); }
+function openPjModal(id){
+  editingPj=id||null;
+  document.getElementById("pjModalTitle").textContent=id?"Editar projeto":"Novo projeto";
+  const p=id?findNode(id).pj:null;
+  document.getElementById("pjEmoji").value=p?(p.emoji||""):"";
+  document.getElementById("pjName").value=p?p.name:"";
+  document.getElementById("pjDesc").value=p?(p.desc||""):"";
+  document.getElementById("pjStatus").value=p?(p.status||"ativo"):"ativo";
+  document.getElementById("pjGithub").value=p?(p.github||""):"";
+  pendingLogo.pj=undefined;
+  document.getElementById("pjImgFile").value="";
+  showLogoPrev("pj", p&&p.img ? p.img : null);
+  document.getElementById("pjModal").classList.add("open");
+}
+function savePj(){
+  const name=document.getElementById("pjName").value.trim();
+  if(!name) return alert("Dá um nome pro projeto.");
+  const data={emoji:document.getElementById("pjEmoji").value.trim()||"🚀", name,
+    desc:document.getElementById("pjDesc").value.trim(), status:document.getElementById("pjStatus").value,
+    github:document.getElementById("pjGithub").value.trim()};
+  if(pendingLogo.pj!==undefined){ data.img = pendingLogo.pj || ""; if(pendingLogo.pj) data.imgFit="contain"; }
+  if(editingPj){ Object.assign(findNode(editingPj).pj, data); }
+  else{
+    const co=findNode(pjTargetCo).co;
+    const id=uid();
+    co.projects.push({id, ...data, apps:[], todos:[]});
+    expanded.add(co.id); newborn.add(id);
+  }
+  save(); closeModals(); render();
+}
+function delPj(id){
+  const f=findNode(id);
+  if(!confirm(`Excluir o projeto "${f.pj.name}"?`)) return;
+  f.co.projects=f.co.projects.filter(x=>x.id!==id);
+  closeDrawer(); save(); render();
+}
+
+function openAppModalFor(pjId, apId){ apTargetPj=pjId; openAppModal(apId); }
+function openAppModal(id){
+  editingApp=id||null;
+  document.getElementById("appModalTitle").textContent=id?"Editar serviço":"Novo serviço";
+  const a=id?findNode(id).ap:null;
+  const g=(f,v)=>document.getElementById(f).value=v||"";
+  g("apName",a&&a.name); g("apRole",a&&a.role); g("apPlan",a&&a.plan);
+  document.getElementById("apCost").value=a?(a.cost||0):0;
+  g("apDash",a&&a.dash); g("apUrl",a&&a.url); g("apHealth",a&&a.health);
+  g("apNotes",a&&a.notes); g("apAlert",a&&a.alert);
+  document.getElementById("appModal").classList.add("open");
+}
+function saveApp(){
+  const name=document.getElementById("apName").value.trim();
+  if(!name) return alert("Dá um nome pro serviço.");
+  const data={name, role:document.getElementById("apRole").value.trim(),
+    plan:document.getElementById("apPlan").value.trim(),
+    cost:parseFloat(document.getElementById("apCost").value)||0,
+    dash:document.getElementById("apDash").value.trim(),
+    url:document.getElementById("apUrl").value.trim(),
+    health:document.getElementById("apHealth").value.trim(),
+    notes:document.getElementById("apNotes").value,
+    alert:document.getElementById("apAlert").value.trim()};
+  if(editingApp){ Object.assign(findNode(editingApp).ap, data); }
+  else{
+    const f=findNode(apTargetPj);
+    const id=uid();
+    f.pj.apps.push({id, ...data});
+    expanded.add(f.co.id); expanded.add(f.pj.id); newborn.add(id);
+  }
+  save(); closeModals(); render();
+}
+function delApp(id){
+  const f=findNode(id);
+  if(!confirm(`Excluir "${f.ap.name}"?`)) return;
+  f.pj.apps=f.pj.apps.filter(x=>x.id!==id);
+  closeDrawer(); save(); render();
+}
+
+function toggleTodo(pjId,i){ const p=findNode(pjId).pj; p.todos[i].done=!p.todos[i].done; p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync(); }
+function delTodo(pjId,i){ const p=findNode(pjId).pj; p.todos.splice(i,1); p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync(); }
+function addTodo(pjId){
+  const inp=document.getElementById("todoInput"); const t=inp.value.trim(); if(!t) return;
+  const p=findNode(pjId).pj;
+  p.todos.push({t,done:false}); p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync();
+}
+let syncTimer=null;
+function scheduleSync(){
+  if(!brainDir) return;
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(()=>syncBrain(), 1500);
+}
+
+/* ================= util ================= */
+function closeModals(){ document.querySelectorAll(".overlay").forEach(o=>o.classList.remove("open")); }
+document.querySelectorAll(".overlay").forEach(o=>o.addEventListener("click",e=>{ if(e.target===o) closeModals(); }));
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeModals(); closeDrawer(); } });
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="workspace-dados.json"; a.click();
+}
+function importData(ev){
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const d=JSON.parse(r.result);
+    if(!d.companies) throw new Error("formato inválido");
+    DB=d; expanded=new Set(); save(); render(); fitView();
+  }catch(e){ alert("Arquivo inválido: "+e.message);} };
+  r.readAsText(f); ev.target.value="";
+}
+
+/* ================= IA: contas/provedores ================= */
+const PROVS = () => (DB.settings && DB.settings.providers) || [];
+const getProv = id => PROVS().find(p=>p.id===id);
+const provLabel = id => { const p=getProv(id); return p ? p.name : "conta removida"; };
+const shortModel = m => (m||"").replace(/^claude-/,"").replace(/-\d{8}$/,"");
+
+const PROV_PRESETS = {
+  anthropic: { name:"Claude — principal", kind:"anthropic", base:"",
+    models:"claude-sonnet-5, claude-haiku-4-5, claude-opus-4-8" },
+  groq: { name:"Groq", kind:"openai", base:"https://api.groq.com/openai/v1",
+    models:"llama-3.3-70b-versatile, whisper-large-v3" }
+};
+let editingProv=null;
+
+function setGithubToken(v){ DB.settings=DB.settings||{}; DB.settings.githubToken=(v||"").trim(); save();
+  const s=document.getElementById("ghTokenStatus"); if(s) s.textContent=DB.settings.githubToken?"✓ token salvo neste navegador":""; }
+function openAiModal(){ renderProvs(); document.getElementById("provForm").style.display="none";
+  DB.settings=DB.settings||{};
+  const gi=document.getElementById("ghTokenInput"); if(gi) gi.value=DB.settings.githubToken||"";
+  const gs=document.getElementById("ghTokenStatus"); if(gs) gs.textContent=DB.settings.githubToken?"✓ token salvo neste navegador":"";
+  document.getElementById("aiModal").classList.add("open"); }
+function renderProvs(){
+  const el=document.getElementById("provList");
+  el.innerHTML = PROVS().map(p=>`
+    <div class="prov-item">
+      <div class="pi">
+        <div class="pname">${esc(p.name)}</div>
+        <div class="pmeta">${p.kind==="anthropic"?"Anthropic":"OpenAI-compat"} · ${esc((p.models||[]).join(", "))} · chave ${p.apiKey?("•••"+p.apiKey.slice(-4)):"—"}</div>
+      </div>
+      <button class="btn sm" onclick="openProvForm(null,'${p.id}')">✎</button>
+      <button class="btn sm ghost" onclick="delProv('${p.id}')">✕</button>
+    </div>`).join("") || '<div style="color:var(--tx3); font-size:13px; padding:6px 2px">nenhuma conta ainda — adiciona a primeira 👇</div>';
+}
+function openProvForm(preset, id){
+  editingProv=id||null;
+  const f=document.getElementById("provForm"); f.style.display="block";
+  const p = id ? getProv(id) : (preset ? PROV_PRESETS[preset] : {name:"",kind:"anthropic",base:"",models:""});
+  document.getElementById("pvName").value = p.name||"";
+  document.getElementById("pvKind").value = p.kind||"anthropic";
+  document.getElementById("pvBase").value = p.base || p.baseUrl || "";
+  document.getElementById("pvKey").value = id ? (p.apiKey||"") : "";
+  document.getElementById("pvModels").value = Array.isArray(p.models) ? p.models.join(", ") : (p.models||"");
+  pvKindChanged();
+}
+function pvKindChanged(){
+  document.getElementById("pvBaseWrap").style.display =
+    document.getElementById("pvKind").value==="openai" ? "block" : "none";
+}
+function saveProv(){
+  const name=document.getElementById("pvName").value.trim();
+  const key=document.getElementById("pvKey").value.trim();
+  const models=document.getElementById("pvModels").value.split(",").map(s=>s.trim()).filter(Boolean);
+  if(!name) return alert("Dá um nome pra conta.");
+  if(!key) return alert("Cola a API key.");
+  if(!models.length) return alert("Informa pelo menos um modelo.");
+  const data={ name, kind:document.getElementById("pvKind").value,
+    baseUrl:document.getElementById("pvBase").value.trim().replace(/\/+$/,""),
+    apiKey:key, models };
+  if(data.kind==="openai" && !data.baseUrl) return alert("OpenAI-compatível precisa da Base URL.");
+  if(editingProv){ Object.assign(getProv(editingProv), data); }
+  else{ DB.settings.providers.push({id:uid(), ...data}); }
+  save(); renderProvs();
+  document.getElementById("provForm").style.display="none";
+}
+function delProv(id){
+  const p=getProv(id);
+  if(!confirm(`Remover a conta "${p.name}"? (os chats que a usam vão pedir outra conta)`)) return;
+  DB.settings.providers = PROVS().filter(x=>x.id!==id);
+  save(); renderProvs();
+}
+
+/* ================= IA: chats ================= */
+let curChat=null;   // {pjId, chatId}
+let chatBusy=false;
+
+const getChat = () => {
+  if(!curChat) return null;
+  const f=findNode(curChat.pjId); if(!f) return null;
+  return {f, chat:(f.pj.chats||[]).find(c=>c.id===curChat.chatId)};
+};
+
+function newChat(pjId){
+  if(!PROVS().length){ alert("Cadastra uma conta de IA primeiro (botão ⚙ IAs, no topo)."); openAiModal(); return; }
+  const f=findNode(pjId);
+  const prov=PROVS()[0];
+  const chat={ id:uid(), title:"", providerId:prov.id, model:prov.models[0], messages:[], ctx:[] };
+  f.pj.chats.push(chat); save();
+  openChat(pjId, chat.id);
+}
+function delChat(pjId, chatId){
+  const f=findNode(pjId);
+  const ch=f.pj.chats.find(c=>c.id===chatId);
+  if(!confirm(`Apagar o chat "${ch.title||"novo chat"}"?`)) return;
+  f.pj.chats = f.pj.chats.filter(c=>c.id!==chatId);
+  save();
+  if(curChat && curChat.chatId===chatId){ curChat=null; openDrawer(f); }
+  else openDrawer(f);
+}
+function saveMemory(pjId){
+  const f=findNode(pjId);
+  f.pj.context = document.getElementById("pjMemory").value;
+  f.pj._memDirty = true;
+  save(); scheduleSync();
+  const b=event.target; b.textContent="✓ salvo"; setTimeout(()=>b.textContent="💾 Salvar memória", 1200);
+}
+
+function openChat(pjId, chatId){
+  curChat={pjId, chatId};
+  const {f, chat}=getChat();
+  document.getElementById("drawerStd").style.display="none";
+  document.getElementById("drawerChat").style.display="flex";
+  const d=document.getElementById("drawer");
+  d.classList.add("open","wide");
+  document.getElementById("chTitle").textContent = chat.title || (f.pj.name+" · novo chat");
+  // selects de conta/modelo
+  const sp=document.getElementById("chProv");
+  sp.innerHTML = PROVS().map(p=>`<option value="${p.id}" ${p.id===chat.providerId?"selected":""}>${esc(p.name)}</option>`).join("");
+  fillModelSelect(chat);
+  renderCtxBar(); renderMsgs();
+}
+function fillModelSelect(chat){
+  const prov=getProv(chat.providerId) || PROVS()[0];
+  const sm=document.getElementById("chModel");
+  sm.innerHTML = (prov?prov.models:[]).map(m=>`<option value="${esc(m)}" ${m===chat.model?"selected":""}>${esc(shortModel(m))}</option>`).join("");
+}
+function chatProvChanged(){
+  const {chat}=getChat(); if(!chat) return;
+  chat.providerId=document.getElementById("chProv").value;
+  const prov=getProv(chat.providerId);
+  if(prov && !prov.models.includes(chat.model)) chat.model=prov.models[0];
+  fillModelSelect(chat); save();
+}
+function chatModelChanged(){
+  const {chat}=getChat(); if(!chat) return;
+  chat.model=document.getElementById("chModel").value; save();
+}
+function backFromChat(){
+  const pjId=curChat && curChat.pjId;
+  exitChatUi();
+  if(pjId){ const f=findNode(pjId); if(f) openDrawer(f); }
+}
+function exitChatUi(){
+  curChat=null;
+  document.getElementById("drawerChat").style.display="none";
+  document.getElementById("drawerStd").style.display="contents";
+  document.getElementById("drawer").classList.remove("wide");
+}
+
+/* ---- contexto interconectado (opt-in, pra não gastar token à toa) ---- */
+function renderCtxBar(){
+  const {f, chat}=getChat(); if(!chat) return;
+  const el=document.getElementById("chCtx");
+  let chips=`<span class="lbl">🔗 contexto</span>
+    <span class="ctxchip on lock" title="o projeto atual sempre entra">${esc(f.pj.name)}</span>`;
+  DB.companies.forEach(c=>c.projects.forEach(p=>{
+    if(p.id===f.pj.id) return;
+    const on=(chat.ctx||[]).includes(p.id);
+    chips+=`<span class="ctxchip ${on?"on":""}" onclick="toggleCtx('${p.id}')" title="${on?"conectado — a IA lê a memória deste projeto":"desligado — não gasta token"}">${esc(c.name)} · ${esc(p.name)}</span>`;
+  }));
+  chips+=`<span style="margin-left:auto; font-size:10.5px; color:var(--tx3); font-family:'JetBrains Mono',monospace" id="ctxEst"></span>`;
+  el.innerHTML=chips;
+  updateCtxEst();
+}
+function toggleCtx(pjId){
+  const {chat}=getChat(); if(!chat) return;
+  chat.ctx = chat.ctx||[];
+  const i=chat.ctx.indexOf(pjId);
+  if(i>=0) chat.ctx.splice(i,1); else chat.ctx.push(pjId);
+  save(); renderCtxBar();
+}
+function updateCtxEst(){
+  const g=getChat(); if(!g||!g.chat) return;
+  const sys=buildSystem(g.f, g.chat);
+  const hist=g.chat.messages.map(m=>m.content).join(" ");
+  const est=Math.round((sys.length+hist.length)/3.5);
+  const el=document.getElementById("ctxEst");
+  if(el) el.textContent="~"+(est>1000?(est/1000).toFixed(1)+"k":est)+" tokens";
+}
+
+function projectCard(c, p){
+  const svcs=(p.apps||[]).map(a=>`- ${a.name}: ${a.role||""}${a.plan?` (${a.plan})`:""}`).join("\n");
+  const pend=(p.todos||[]).filter(t=>!t.done).map(t=>"- "+t.t).join("\n");
+  return `### Projeto: ${p.name} (empresa: ${c.name})
+${p.desc||""}
+${svcs?`Serviços/ferramentas:\n${svcs}`:""}
+${pend?`Pendências abertas:\n${pend}`:""}
+${p.context?`Memória do projeto:\n${p.context}`:""}`.trim();
+}
+function buildSystem(f, chat){
+  let s=`Você é o assistente do Antonio no painel Workspace dele. O foco desta conversa é o projeto abaixo.
+
+${projectCard(f.co, f.pj)}`;
+  const extras=(chat.ctx||[]).map(pid=>{
+    for(const c of DB.companies){ const p=c.projects.find(x=>x.id===pid); if(p) return projectCard(c,p); }
+    return null;
+  }).filter(Boolean);
+  if(extras.length) s+=`
+
+## Contexto conectado de outros projetos (o Antonio ligou de propósito)
+${extras.join("\n\n")}`;
+  s+=`
+
+Responda em português (Brasil), direto e útil, sem enrolação. Se faltar informação sobre a operação, diga o que falta em vez de inventar.`;
+  return s;
+}
+
+/* ---- render das mensagens ---- */
+function mdlite(s){
+  let t=esc(s);
+  t=t.replace(/```([\s\S]*?)```/g,(_,c)=>`<pre>${c.replace(/^\w+\n/,"")}</pre>`);
+  t=t.replace(/`([^`\n]+)`/g,"<code>$1</code>");
+  t=t.replace(/\*\*([^*\n]+)\*\*/g,"<b>$1</b>");
+  return t;
+}
+function renderMsgs(){
+  const g=getChat(); if(!g||!g.chat) return;
+  const el=document.getElementById("chMsgs");
+  el.innerHTML = g.chat.messages.map(m=>
+    m.role==="user"
+      ? `<div class="bub user">${esc(m.content)}</div>`
+      : `<div class="bub ai">${mdlite(m.content)}${m.model?`<span class="meta">${esc(shortModel(m.model))}</span>`:""}</div>`
+  ).join("") || `<div style="color:var(--tx3); font-size:13px; text-align:center; margin-top:30px">
+      Novo chat sobre <b>${esc(g.f.pj.name)}</b>.<br>A IA já conhece os serviços, pendências e a memória deste projeto.<br>
+      Pra cruzar com outro projeto, liga o chip dele aí embaixo. 👇</div>`;
+  el.scrollTop=el.scrollHeight;
+  updateCtxEst();
+}
+function chKey(e){
+  if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); sendChat(); }
+}
+
+/* ---- envio + streaming ---- */
+async function sendChat(){
+  if(chatBusy) return;
+  const g=getChat(); if(!g||!g.chat) return;
+  const inp=document.getElementById("chInput");
+  const text=inp.value.trim(); if(!text) return;
+  const prov=getProv(g.chat.providerId);
+  if(!prov){ alert("A conta deste chat foi removida — escolhe outra no seletor do topo."); return; }
+
+  inp.value="";
+  g.chat.messages.push({role:"user", content:text});
+  if(!g.chat.title){ g.chat.title=text.slice(0,42)+(text.length>42?"…":""); document.getElementById("chTitle").textContent=g.chat.title; }
+  save(); renderMsgs();
+
+  chatBusy=true;
+  document.getElementById("chSend").disabled=true;
+  const el=document.getElementById("chMsgs");
+  el.insertAdjacentHTML("beforeend", `<div class="bub ai" id="liveBub"><span class="typing"><i></i><i></i><i></i></span></div>`);
+  el.scrollTop=el.scrollHeight;
+
+  const sys=buildSystem(g.f, g.chat);
+  const hist=g.chat.messages.slice(-30).map(m=>({role:m.role, content:m.content}));
+  let acc="";
+  const onDelta=t=>{
+    acc+=t;
+    const b=document.getElementById("liveBub");
+    if(b){ b.innerHTML=mdlite(acc); el.scrollTop=el.scrollHeight; }
+  };
+  try{
+    if(prov.kind==="anthropic") await streamAnthropic(prov, g.chat.model, sys, hist, onDelta);
+    else await streamOpenAI(prov, g.chat.model, sys, hist, onDelta);
+    g.chat.messages.push({role:"assistant", content:acc||"(resposta vazia)", model:g.chat.model});
+  }catch(err){
+    if(acc) g.chat.messages.push({role:"assistant", content:acc+"\n\n[resposta interrompida]", model:g.chat.model});
+    const live=document.getElementById("liveBub"); if(live) live.remove();
+    el.insertAdjacentHTML("beforeend", `<div class="bub err">⚠ ${esc(String(err.message||err))}</div>`);
+    el.scrollTop=el.scrollHeight;
+  }
+  save();
+  chatBusy=false;
+  document.getElementById("chSend").disabled=false;
+  if(acc) renderMsgs();
+  inp.focus();
+}
+
+async function readSSE(resp, onEvent){
+  if(!resp.ok){
+    let msg="HTTP "+resp.status;
+    try{ const j=await resp.json(); msg += " — "+(j.error&&(j.error.message||j.error.type)||JSON.stringify(j)).slice(0,300); }catch(e){}
+    throw new Error(msg);
+  }
+  const reader=resp.body.getReader();
+  const dec=new TextDecoder();
+  let buf="";
+  for(;;){
+    const {done, value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split("\n"); buf=lines.pop();
+    for(const ln of lines){
+      const s=ln.trim();
+      if(!s.startsWith("data:")) continue;
+      const payload=s.slice(5).trim();
+      if(payload==="[DONE]") return;
+      try{ onEvent(JSON.parse(payload)); }catch(e){}
+    }
+  }
+}
+async function streamAnthropic(prov, model, system, messages, onDelta){
+  const resp=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-api-key":prov.apiKey,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body:JSON.stringify({model, max_tokens:4096, system, messages, stream:true})
+  });
+  await readSSE(resp, ev=>{
+    if(ev.type==="content_block_delta" && ev.delta && ev.delta.type==="text_delta") onDelta(ev.delta.text);
+    if(ev.type==="error") throw new Error(ev.error && ev.error.message || "erro da API");
+  });
+}
+async function streamOpenAI(prov, model, system, messages, onDelta){
+  const resp=await fetch(prov.baseUrl+"/chat/completions",{
+    method:"POST",
+    headers:{"content-type":"application/json","authorization":"Bearer "+prov.apiKey},
+    body:JSON.stringify({model, stream:true, messages:[{role:"system",content:system},...messages]})
+  });
+  await readSSE(resp, ev=>{
+    const d=ev.choices && ev.choices[0] && ev.choices[0].delta;
+    if(d && d.content) onDelta(d.content);
+  });
+}
+
+/* ================= 🧠 CÉREBRO (Workspace/brain <-> IAs por arquivos) ================= */
+let brainDir=null;
+
+const slug=s=>(s||"").normalize("NFKD").replace(/[̀-ͯ]/g,"").toLowerCase()
+  .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+
+function idbOpen(){ return new Promise((res,rej)=>{
+  const r=indexedDB.open("workspace-brain",1);
+  r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+});}
+async function idbSet(k,v){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction("kv","readwrite"); tx.objectStore("kv").put(v,k);
+  tx.oncomplete=res; tx.onerror=()=>rej(tx.error);
+});}
+async function idbGet(k){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const rq=db.transaction("kv").objectStore("kv").get(k);
+  rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error);
+});}
+
+function setBrainBtn(label){ const b=document.getElementById("brainBtn"); if(b) b.innerHTML=label; }
+
+async function getDirPath(root, parts, create){
+  let d=root;
+  for(const p of parts) d=await d.getDirectoryHandle(p,{create:!!create});
+  return d;
+}
+async function readFileIf(dir, name){
+  try{ const fh=await dir.getFileHandle(name); return await (await fh.getFile()).text(); }
+  catch(e){ return null; }
+}
+async function writeFile(dir, name, text){
+  const fh=await dir.getFileHandle(name,{create:true});
+  const w=await fh.createWritable(); await w.write(text); await w.close();
+}
+
+function genProjetoMd(c,p){
+  const svcs=(p.apps||[]).map(a=>{
+    let l=`- **${a.name}** — ${a.role||""} · ${a.plan||"—"} · ${(parseFloat(a.cost)||0)>0?"~US$ "+parseFloat(a.cost).toFixed(0)+"/mês":"grátis"}`;
+    if(a.alert) l+=`\n  - ⚠ ${a.alert}`;
+    if(a.notes) l+="\n"+a.notes.split("\n").map(n=>"  - "+n).join("\n");
+    if(a.dash) l+=`\n  - painel: ${a.dash}`;
+    return l;
+  }).join("\n");
+  return `# ${p.name}
+**Empresa:** ${c.name}${c.desc?` (${c.desc})`:""}
+**Status:** ${p.status||"ativo"} · **Custo:** ~US$ ${pjCost(p).toFixed(0)}/mês
+
+${p.desc||""}
+
+## Serviços & assinaturas
+${svcs||"(nenhum)"}
+
+*(gerado pelo painel Workspace — edite pelo painel, não aqui)*
+`;
+}
+const serTodos=p=>`# Pendências — ${p.name}\n\n`+
+  (p.todos||[]).map(t=>`- [${t.done?"x":" "}] ${t.t}`).join("\n")+"\n";
+function parseTodos(text){
+  const out=[];
+  for(const ln of text.split("\n")){
+    const m=ln.match(/^\s*[-*] \[( |x|X)\] (.+)$/);
+    if(m) out.push({t:m[2].trim(), done:m[1].toLowerCase()==="x"});
+  }
+  return out;
+}
+
+async function connectBrainClick(){
+  try{
+    if(!brainDir) brainDir=await idbGet("brainDir")||null;
+    if(brainDir){
+      let st=await brainDir.queryPermission({mode:"readwrite"});
+      if(st!=="granted") st=await brainDir.requestPermission({mode:"readwrite"});
+      if(st==="granted") return syncBrain();
+      brainDir=null;
+    }
+    brainDir=await window.showDirectoryPicker({mode:"readwrite"});
+    await idbSet("brainDir", brainDir);
+    await syncBrain();
+  }catch(e){
+    if(e && e.name==="AbortError") return;
+    alert("Cérebro: "+(e.message||e));
+  }
+}
+
+async function syncBrain(){
+  if(!brainDir) return;
+  setBrainBtn("⏳ sincronizando…");
+  let lidos=0, escritos=0;
+  try{
+    for(const c of DB.companies){
+      for(const p of c.projects){
+        const dir=await getDirPath(brainDir,[slug(c.name),slug(p.name)],true);
+        // memória: quem editou por último ganha (app marcado como "dirty" escreve;
+        // senão o disco — onde as IAs escrevem — é a fonte da verdade)
+        if(p._memDirty){
+          await writeFile(dir,"memoria.md", p.context||`# Memória — ${p.name}\n`);
+          p._memDirty=false; escritos++;
+        }else{
+          const t=await readFileIf(dir,"memoria.md");
+          if(t===null){ await writeFile(dir,"memoria.md", p.context||`# Memória — ${p.name}\n`); escritos++; }
+          else if(t!==p.context){ p.context=t; lidos++; }
+        }
+        // pendências: mesma regra
+        if(p._todoDirty){
+          await writeFile(dir,"pendencias.md", serTodos(p));
+          p._todoDirty=false; escritos++;
+        }else{
+          const t=await readFileIf(dir,"pendencias.md");
+          if(t===null){ await writeFile(dir,"pendencias.md", serTodos(p)); escritos++; }
+          else{
+            const parsed=parseTodos(t);
+            if(JSON.stringify(parsed)!==JSON.stringify(p.todos)){ p.todos=parsed; lidos++; }
+          }
+        }
+        // cartão do projeto: sempre reflete o painel
+        await writeFile(dir,"projeto.md", genProjetoMd(c,p));
+      }
+    }
+    await writeFile(brainDir,"workspace.json", JSON.stringify(DB,null,2));
+    save(); updateHud();
+    if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); }
+    const h=new Date();
+    setBrainBtn(`✓ cérebro sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`);
+    setTimeout(()=>setBrainBtn("🧠 Sincronizar"), 2600);
+  }catch(e){
+    setBrainBtn("🧠 Conectar cérebro");
+    alert("Cérebro: falha ao sincronizar — "+(e.message||e));
+  }
+}
+
+async function ensureBrain(){
+  try{
+    if(!("showDirectoryPicker" in window)){ setBrainBtn("🧠 (Chrome/Edge)"); return; }
+    const h=await idbGet("brainDir");
+    if(!h){ setBrainBtn("🧠 Conectar cérebro"); return; }
+    brainDir=h;
+    const st=await brainDir.queryPermission({mode:"readwrite"});
+    if(st==="granted"){ setBrainBtn("🧠 Sincronizar"); syncBrain(); }
+    else setBrainBtn("🧠 Reconectar cérebro");
+  }catch(e){ setBrainBtn("🧠 Conectar cérebro"); }
+}
+
+/* ============ conexão com o projeto REAL (telemetria factual) ============ */
+/* handle da pasta de cada projeto (só leitura), no mesmo IndexedDB do cérebro. */
+const projDirCache={};   // p.id -> FileSystemDirectoryHandle (memória)
+const teleCache={};      // p.id -> {git,specs,at}
+
+async function getProjDir(pid, {prompt=false, write=false}={}){
+  const mode=write?"readwrite":"read";
+  try{
+    let h = projDirCache[pid] || await idbGet("proj:"+pid);
+    if(h){
+      let st = await h.queryPermission({mode});
+      if(st!=="granted" && prompt) st = await h.requestPermission({mode});
+      if(st==="granted"){ projDirCache[pid]=h; return h; }
+      if(!prompt) return null;
+    }
+    if(!prompt) return null;
+    h = await window.showDirectoryPicker({mode});
+    await idbSet("proj:"+pid, h); projDirCache[pid]=h; return h;
+  }catch(e){ if(e && e.name==="AbortError") return null; throw e; }
+}
+async function forgetProjDir(pid){ projDirCache[pid]=null; delete teleCache[pid]; try{ await idbSet("proj:"+pid,null); }catch(e){} }
+
+async function readProjectTelemetry(dir){
+  const out={git:null, specs:null, source:"local"};
+  try{                                             // git: branch + último commit
+    const gitDir=await dir.getDirectoryHandle(".git");
+    const head=await readFileIf(gitDir,"HEAD");
+    let branch=null;
+    if(head){ const m=head.match(/ref:\s*refs\/heads\/(.+)\s*$/m); branch=m?m[1].trim():"detached"; }
+    let logs=null;
+    try{ const logsDir=await getDirPath(gitDir,["logs"]); logs=await readFileIf(logsDir,"HEAD"); }catch(e){}
+    if(logs){
+      const lines=logs.split("\n").filter(l=>l.trim());
+      const last=lines[lines.length-1]||"";
+      const tab=last.indexOf("\t");
+      const meta=tab>=0?last.slice(0,tab):last, rest=tab>=0?last.slice(tab+1):"";
+      const tsm=meta.match(/ (\d+) [+-]\d{4}\s*$/), parts=meta.split(" ");
+      out.git={ branch, commits:lines.length, hash:(parts[1]||"").slice(0,7),
+                ts: tsm?parseInt(tsm[1],10)*1000:null,
+                msg: rest.replace(/^[^:]*:\s*/,"").trim() || "(sem mensagem)" };
+    }else if(branch){ out.git={branch, commits:0, hash:"", ts:null, msg:"(sem commits)"}; }
+  }catch(e){}
+  try{                                             // specs/: quantas features
+    const specsDir=await dir.getDirectoryHandle("specs");
+    let count=0, last="";
+    for await (const [name,h] of specsDir.entries()){
+      if(h.kind==="directory" && /^\d{3}-/.test(name)){ count++; if(name>last) last=name; }
+    }
+    if(count) out.specs={count, last};
+  }catch(e){}
+  return out;
+}
+async function refreshProjectTelemetry(p, opts={}){
+  const dir=await getProjDir(p.id, opts); if(!dir) return null;
+  const t=await readProjectTelemetry(dir); t.at=Date.now(); teleCache[p.id]=t; return t;
+}
+
+/* ===== Fase 2a: camada de leitura via GitHub API (modo remoto, multi-dispositivo) =====
+   PAT fine-grained (Contents: read-only) em DB.settings.githubToken. api.github.com tem
+   CORS liberado — funciona client-side, sem servidor. */
+async function ghGet(path){
+  const tok=(DB.settings||{}).githubToken;
+  const r=await fetch("https://api.github.com"+path,{headers:Object.assign(
+    {"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"},
+    tok?{"Authorization":"Bearer "+tok}:{})});
+  if(r.status===404) return null;
+  if(!r.ok) throw new Error("GitHub "+r.status+(r.status===401?" (token inválido)":r.status===403?" (rate limit ou sem acesso ao repo)":""));
+  return r.json();
+}
+async function ghRepoTelemetry(owner,repo){
+  const out={git:null, specs:null, source:"github"};
+  const info=await ghGet(`/repos/${owner}/${repo}`);
+  const branch=info?info.default_branch:null;
+  const commits=await ghGet(`/repos/${owner}/${repo}/commits?per_page=1`);
+  if(commits && commits[0]){
+    const c=commits[0];
+    out.git={ branch, commits:null, hash:(c.sha||"").slice(0,7),
+      ts:(c.commit&&c.commit.author&&c.commit.author.date)?Date.parse(c.commit.author.date):null,
+      msg:((c.commit&&c.commit.message)||"").split("\n")[0]||"(sem mensagem)" };
+  }else if(branch){ out.git={branch, commits:null, hash:"", ts:null, msg:"(sem commits)"}; }
+  const specs=await ghGet(`/repos/${owner}/${repo}/contents/specs`);
+  if(Array.isArray(specs)){
+    const dirs=specs.filter(e=>e.type==="dir" && /^\d{3}-/.test(e.name)).map(e=>e.name).sort();
+    if(dirs.length) out.specs={count:dirs.length, last:dirs[dirs.length-1]};
+  }
+  return out;
+}
+async function detectRepoFromGit(dir){
+  try{
+    const gitDir=await dir.getDirectoryHandle(".git");
+    const cfg=await readFileIf(gitDir,"config");
+    if(!cfg) return null;
+    const m=cfg.match(/url\s*=\s*\S*github\.com[:/]([^/\s]+)\/([^\s]+?)(?:\.git)?\s*$/mi);
+    return m?`${m[1]}/${m[2]}`:null;
+  }catch(e){ return null; }
+}
+/* híbrido: pasta local (ao vivo) quando disponível; senão GitHub API (remoto) */
+async function getTelemetry(p, {promptLocal=false}={}){
+  let dir=null; try{ dir=await getProjDir(p.id,{prompt:promptLocal}); }catch(e){}
+  if(dir){
+    if(!p.github){ const gh=await detectRepoFromGit(dir); if(gh){ p.github=gh; save(); } }
+    const t=await readProjectTelemetry(dir); t.at=Date.now(); teleCache[p.id]=t; return t;
+  }
+  if(p.github && (DB.settings||{}).githubToken){
+    const [o,r]=p.github.split("/");
+    const t=await ghRepoTelemetry(o,r); t.at=Date.now(); teleCache[p.id]=t; return t;
+  }
+  return null;
+}
+function agoStr(ts){
+  if(!ts) return "";
+  const s=Math.max(0,(Date.now()-ts)/1000);
+  if(s<90) return "agora há pouco";
+  const m=s/60; if(m<90) return "há "+Math.round(m)+" min";
+  const h=m/60; if(h<36) return "há "+Math.round(h)+" h";
+  const d=h/24; if(d<14) return "há "+Math.round(d)+" dias";
+  const w=d/7; if(w<9) return "há "+Math.round(w)+" sem";
+  const mo=d/30; if(mo<18) return "há "+Math.round(mo)+" meses";
+  return "há "+Math.round(d/365)+" ano(s)";
+}
+function hasAIProvider(){ return ((DB.settings||{}).providers||[]).some(pr=>pr.apiKey); }
+
+function teleInner(c,p,state){
+  const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
+  if(state==="loading") return `<div class="dr-desc" style="color:var(--tx3)">lendo o projeto…</div>`;
+  if(state==="none" || !t) return `<div style="font-size:12px;color:var(--tx3);margin:-2px 0 8px">
+      Aponte pra pasta do projeto (o repositório) pra ver commit, branch, features e pendências reais — sem pedir pra ninguém.
+    </div><button class="btn sm primary" onclick="connectProjDir('${p.id}')">🔗 Conectar pasta do projeto</button>`;
+  const g=t.git, s=t.specs, chips=[];
+  chips.push(t.source==="github"
+    ? `<span class="chip" title="lido da API do GitHub — estado remoto (pushed)">☁ GitHub</span>`
+    : `<span class="chip" title="lido da pasta local — working tree ao vivo">📁 local</span>`);
+  if(g){ chips.push(`<span class="chip" title="branch">⎇ ${esc(g.branch||"—")}</span>`); if(g.commits!=null) chips.push(`<span class="chip">${g.commits} commit(s)</span>`); }
+  if(s) chips.push(`<span class="chip" title="pasta specs/">${s.count} features · atual ${esc(s.last||"—")}</span>`);
+  chips.push(`<span class="chip">${openN}/${totN} pendências abertas</span>`);
+  const commitLine = g
+    ? `<div style="font-size:12.5px;color:var(--tx2);margin:2px 0 8px"><b>último commit</b> ${agoStr(g.ts)}${g.hash?` · <code style="color:var(--tx3)">${esc(g.hash)}</code>`:""}<br><span style="color:var(--tx)">${esc(g.msg)}</span></div>`
+    : `<div class="dr-desc" style="color:var(--tx3)">pasta sem <code>.git</code> — sem histórico de commits</div>`;
+  return `${commitLine}<div class="chips" style="margin-bottom:8px">${chips.join("")}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <button class="btn sm" onclick="refreshProjClick('${p.id}')">🔄 Atualizar do projeto</button>
+      <button class="btn sm primary" id="copyCtxBtn" onclick="copyProjectContext('${p.id}')" title="Copia commits + pendências + memória atual pra colar no Claude Code / Codex">📋 Copiar contexto p/ IA</button>
+      <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório — versionado no git, alimentado por qualquer IA">🧩 Brain no repo</button>
+      <button class="btn sm ghost" onclick="disconnectProjDir('${p.id}')" title="esquecer a pasta">⊘</button>
+    </div>${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
+}
+function teleSectionHtml(c,p,state){ return `<div class="dr-sec">📡 Estado do projeto</div><div id="teleWrap">${teleInner(c,p,state)}</div>`; }
+function paintTele(pid,state){ const el=document.getElementById("teleWrap"); if(!el) return; const f=findNode(pid); if(f&&f.type==="pj") el.innerHTML=teleInner(f.co,f.pj,state); }
+
+async function hydrateTele(c,p){
+  paintTele(p.id, teleCache[p.id]?"ready":"loading");
+  try{ const t=await getTelemetry(p,{promptLocal:false}); paintTele(p.id, (t||teleCache[p.id])?"ready":"none"); }
+  catch(e){ paintTele(p.id, teleCache[p.id]?"ready":"none"); }
+}
+async function connectProjDir(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj") return;
+  paintTele(pid,"loading");
+  try{ const dir=await getProjDir(pid,{prompt:true}); if(!dir){ paintTele(pid, teleCache[pid]?"ready":"none"); return; }
+       await refreshProjectTelemetry(f.pj); paintTele(pid,"ready"); }
+  catch(e){ alert("Pasta do projeto: "+(e.message||e)); paintTele(pid,"none"); }
+}
+async function refreshProjClick(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj") return;
+  paintTele(pid,"loading");
+  try{ const t=await getTelemetry(f.pj,{promptLocal:true}); paintTele(pid, t?"ready":"none");
+       if(!t) alert("Conecte a pasta do projeto, OU configure o repositório GitHub (owner/repo) no ✎ do projeto + o token em ⚙ Contas."); }
+  catch(e){ alert("Atualizar: "+(e.message||e)); paintTele(pid, teleCache[pid]?"ready":"none"); }
+}
+async function disconnectProjDir(pid){ await forgetProjDir(pid); paintTele(pid,"none"); }
+
+/* SEM API key (preferência do Antonio, 02/07): monta o contexto do projeto — commits +
+   pendências + memória atual — e copia pro clipboard, pra colar no Claude Code / Codex.
+   A IA que ele já usa no repo reescreve a memoria.md; o painel sincroniza. */
+async function copyText(text){
+  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(text); return true; } }catch(e){}
+  try{
+    const ta=document.createElement("textarea"); ta.value=text;
+    ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta);
+    ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok;
+  }catch(e){ return false; }
+}
+async function copyProjectContext(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj") return;
+  const p=f.pj, btn=document.getElementById("copyCtxBtn"), setBtn=s=>{ if(btn) btn.innerHTML=s; };
+  setBtn("⏳ lendo…");
+  let log="(pasta do projeto não conectada — clique 🔗 Conectar antes)";
+  const dir=await getProjDir(pid,{prompt:true}).catch(()=>null);
+  if(dir){
+    try{
+      const gitDir=await dir.getDirectoryHandle(".git");
+      const logsDir=await getDirPath(gitDir,["logs"]);
+      const raw=await readFileIf(logsDir,"HEAD");
+      if(raw){ const lines=raw.split("\n").filter(l=>l.trim()).slice(-15).reverse();
+        log=lines.map(l=>{ const tab=l.indexOf("\t"), rest=tab>=0?l.slice(tab+1):l; return "- "+rest.replace(/^[^:]*:\s*/,"").trim(); }).join("\n"); }
+      else log="(pasta sem .git)";
+    }catch(e){ log="(pasta sem .git)"; }
+    await refreshProjectTelemetry(p).catch(()=>{});
+  }
+  const t=teleCache[pid]||{};
+  const branch=t.git?`branch ${t.git.branch}, ${t.git.commits} commit(s), HEAD ${t.git.hash||"—"}`:"sem git";
+  const specs=t.specs?`${t.specs.count} features (atual ${t.specs.last})`:"—";
+  const pend=(p.todos||[]).map(x=>`- [${x.done?"x":" "}] ${x.t}`).join("\n")||"(nenhuma)";
+  const out=`Você é a IA que o Antonio usa neste repositório (Claude Code / Codex). Atualize a MEMÓRIA do projeto "${p.name}" no painel Workspace dele.
+Reescreva o memoria.md (em Workspace/brain/<empresa>/<projeto>/memoria.md) de forma CURTA, factual, em português, mantendo o estilo e as seções já existentes. Baseie-se SÓ no estado abaixo; não invente; preserve aprendizados antigos que ainda valham. Salve em memoria.md — o painel sincroniza sozinho.
+
+## memoria.md ATUAL
+${p.context||"(vazio)"}
+
+## TELEMETRIA (lida do repo)
+${p.name} · ${branch} · specs: ${specs}
+
+## COMMITS RECENTES (novo→antigo)
+${log}
+
+## PENDÊNCIAS
+${pend}`;
+  const ok=await copyText(out);
+  setBtn(ok?"✓ copiado — cole na sua IA":"⚠ copie do console (F12)");
+  if(!ok) console.log(out);
+  setTimeout(()=>setBtn("📋 Copiar contexto p/ IA"), 2800);
+}
+
+/* ===== Fase 1: brain versionado no próprio repo (.workspace/brain.md) =====
+   Cria/sincroniza um brain.md DENTRO do repositório + um README com instruções pra
+   qualquer IA (Claude Code/Codex) alimentar esse arquivo. A brain viaja versionada
+   com o código (git push/pull). Sync bidirecional: lado "dirty" ganha, senão o repo. */
+const REPO_BRAIN_README="# Workspace brain — instruções para IAs\n\n"+
+"Este repositório é acompanhado pelo painel Workspace do Antonio.\n\n"+
+"## Regra\n"+
+"Ao concluir um trabalho relevante aqui, ATUALIZE o arquivo .workspace/brain.md:\n"+
+"- Curto e factual: estado vivo do projeto, decisões, próximo passo.\n"+
+"- A seção '## Pendências' usa checklist Markdown (- [ ] aberta, - [x] feita).\n"+
+"- Não invente; reflita o que mudou (confira o git log recente).\n\n"+
+"O painel Workspace lê este arquivo e sincroniza. No git push, o estado viaja com o código.\n";
+
+function genRepoBrain(p){
+  const todos=(p.todos||[]).map(t=>`- [${t.done?"x":" "}] ${t.t}`).join("\n")||"_(sem pendências)_";
+  return `${(p.context||("# "+p.name)).trim()}\n\n## Pendências\n${todos}\n`;
+}
+function parseRepoBrain(text){
+  const i=text.search(/^##\s+Pend[êe]ncias\s*$/mi);
+  if(i<0) return {context:text.trim(), todos:null};
+  return {context:text.slice(0,i).trim(), todos:parseTodos(text.slice(i))};
+}
+async function syncRepoBrain(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj") return;
+  const p=f.pj, btn=document.getElementById("repoBrainBtn"), setBtn=s=>{ if(btn) btn.innerHTML=s; };
+  setBtn("⏳ sincronizando…");
+  let dir; try{ dir=await getProjDir(pid,{prompt:true, write:true}); }
+  catch(e){ alert("Repo: "+(e.message||e)); setBtn("🧩 Brain no repo"); return; }
+  if(!dir){ setBtn("🧩 Brain no repo"); return; }
+  try{
+    const wsDir=await getDirPath(dir,[".workspace"],true);
+    const existing=await readFileIf(wsDir,"brain.md");
+    if(existing===null){
+      await writeFile(wsDir,"brain.md", genRepoBrain(p));
+      await writeFile(wsDir,"README.md", REPO_BRAIN_README);
+      save(); scheduleSync(); setBtn("✓ criado em .workspace/ (commite)");
+    }else if(p._memDirty || p._todoDirty){
+      await writeFile(wsDir,"brain.md", genRepoBrain(p));
+      p._memDirty=false; p._todoDirty=false; save(); scheduleSync(); setBtn("✓ gravado no repo");
+    }else{
+      const parsed=parseRepoBrain(existing);
+      p.context=parsed.context; if(parsed.todos) p.todos=parsed.todos;
+      save(); scheduleSync();
+      if(sel && sel.id===pid) openDrawer(findNode(pid));  // re-render com o que veio do repo
+      return;
+    }
+  }catch(e){ alert("Repo brain: "+(e.message||e)); setBtn("🧩 Brain no repo"); return; }
+  setTimeout(()=>setBtn("🧩 Brain no repo"), 3000);
+}
+
+/* ============ auto-refresh no foco + auto-ping (só fatos, nunca IA) ============ */
+let _autoBusy=false;
+async function autoRefreshAll(force){
+  if(_autoBusy) return; _autoBusy=true;
+  try{
+    for(const c of DB.companies) for(const p of c.projects){
+      try{ const dir=await getProjDir(p.id,{prompt:false}); if(dir) await refreshProjectTelemetry(p); }catch(e){}
+    }
+    if(sel) paintTele(sel.id, teleCache[sel.id]?"ready":"none");
+    for(const c of DB.companies) for(const p of c.projects) for(const a of p.apps){
+      if(a.health){ if(force && pingCache[a.id]) pingCache[a.id].fresh=false; ping(a); }
+    }
+  }finally{ _autoBusy=false; }
+}
+window.addEventListener("focus", ()=>autoRefreshAll(false));
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") autoRefreshAll(false); });
+setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true); }, 5*60*1000);
+
+/* ================= go ================= */
+render();
+if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
+ensureBrain();
+</script>
+</body>
+</html>
