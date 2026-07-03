@@ -285,6 +285,7 @@
 
 <div class="topright">
   <button class="btn" id="brainBtn" onclick="connectBrainClick()">🧠 Conectar cérebro</button>
+  <button class="btn" onclick="openCockpit()">🎛 Cockpit</button>
   <button class="btn" onclick="openAiModal()">⚙ Contas</button>
   <button class="btn" onclick="exportData()">⬇ Backup</button>
   <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Restaurar</button>
@@ -355,6 +356,7 @@
     <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
   </div>
   <div class="f"><label>Repositório GitHub (owner/repo — opcional; usado no modo remoto)</label><input id="pjGithub" placeholder="ex.: antonioz2022/DragonblockGP"></div>
+  <div class="f"><label>Pasta local no PC (opcional — entra no INDEX da brain p/ IAs)</label><input id="pjLocal" placeholder="ex.: C:\Users\anton\Desktop\Mine M\DBGP\DragonblockGP"></div>
   <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
     <input type="file" id="pjImgFile" accept="image/*" onchange="pickLogo(event,'pj')">
     <div id="pjImgPrev" style="margin-top:8px"></div>
@@ -411,6 +413,18 @@
     <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
   </div>
   <div class="modal-foot">
+    <button class="btn" onclick="closeModals()">Fechar</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="cockpitModal"><div class="modal" style="width:min(780px,94vw)">
+  <h3>🎛 Cockpit de desenvolvimento</h3>
+  <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">
+    Todos os projetos num relance — ordenado por quem precisa de atenção.
+  </p>
+  <div id="cockpitBody"></div>
+  <div class="modal-foot" style="justify-content:space-between">
+    <button class="btn sm" onclick="cockpitRefreshAll()">🔄 Atualizar tudo</button>
     <button class="btn" onclick="closeModals()">Fechar</button>
   </div>
 </div></div>
@@ -764,6 +778,7 @@ function openDrawer(f){
         <span class="chip cost">~US$ ${coCost(c).toFixed(0)}/mês</span>
         <span class="chip">${c.projects.reduce((s,p)=>s+p.todos.filter(t=>!t.done).length,0)} pendência(s)</span>
       </div>
+      ${filesSectionHtml()}
       <div class="dr-sec">Projetos</div>
       <div class="mini-list">
         ${c.projects.map(p=>`
@@ -788,7 +803,7 @@ function openDrawer(f){
       </div>
       <div class="dr-desc">${esc(p.desc||"")}</div>
       ${teleSectionHtml(c,p, teleCache[p.id]?"ready":"loading")}
-      <div class="dr-sec">🧠 Memória do projeto</div>
+      <div class="dr-sec">🧠 Memória do projeto <span id="brainCloudBadge" style="font-weight:400; font-size:11px; color:var(--tx3); margin-left:6px"></span></div>
       <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">
         Estado vivo do projeto. Sincroniza com <b>Workspace/brain/</b> — suas IAs
         (Claude Code, Codex…) leem e atualizam por lá.
@@ -814,7 +829,8 @@ function openDrawer(f){
       <div class="todo-add">
         <input id="todoInput" placeholder="nova pendência…" onkeydown="if(event.key==='Enter')addTodo('${p.id}')">
         <button class="btn sm" onclick="addTodo('${p.id}')">＋</button>
-      </div>`;
+      </div>
+      ${filesSectionHtml()}`;
     foot.innerHTML=`
       <button class="btn" onclick="openPjModalFor('${c.id}','${p.id}')">✎ Editar</button>
       <button class="btn ghost" onclick="delPj('${p.id}')">Excluir projeto</button>`;
@@ -846,6 +862,7 @@ function openDrawer(f){
     if(a.health) ping(a);
   }
   if(f.type==="pj") hydrateTele(f.co,f.pj);
+  if(f.type==="co"||f.type==="pj") hydrateFiles(f);
   d.classList.add("open");
 }
 function closeDrawer(){
@@ -959,6 +976,7 @@ function openPjModal(id){
   document.getElementById("pjDesc").value=p?(p.desc||""):"";
   document.getElementById("pjStatus").value=p?(p.status||"ativo"):"ativo";
   document.getElementById("pjGithub").value=p?(p.github||""):"";
+  document.getElementById("pjLocal").value=p?(p.local||""):"";
   pendingLogo.pj=undefined;
   document.getElementById("pjImgFile").value="";
   showLogoPrev("pj", p&&p.img ? p.img : null);
@@ -969,7 +987,8 @@ function savePj(){
   if(!name) return alert("Dá um nome pro projeto.");
   const data={emoji:document.getElementById("pjEmoji").value.trim()||"🚀", name,
     desc:document.getElementById("pjDesc").value.trim(), status:document.getElementById("pjStatus").value,
-    github:document.getElementById("pjGithub").value.trim()};
+    github:document.getElementById("pjGithub").value.trim(),
+    local:document.getElementById("pjLocal").value.trim()};
   if(pendingLogo.pj!==undefined){ data.img = pendingLogo.pj || ""; if(pendingLogo.pj) data.imgFit="contain"; }
   if(editingPj){ Object.assign(findNode(editingPj).pj, data); }
   else{
@@ -1035,6 +1054,7 @@ function addTodo(pjId){
 }
 let syncTimer=null;
 function scheduleSync(){
+  if(typeof queueBrainPush==="function") queueBrainPush();  // cérebro na nuvem (2c)
   if(!brainDir) return;
   clearTimeout(syncTimer);
   syncTimer=setTimeout(()=>syncBrain(), 1500);
@@ -1684,6 +1704,7 @@ function paintTele(pid,state){ const el=document.getElementById("teleWrap"); if(
 
 async function hydrateTele(c,p){
   paintTele(p.id, teleCache[p.id]?"ready":"loading");
+  if(typeof pullBrainRemote==="function") pullBrainRemote(c,p).catch(()=>{});
   try{ const t=await getTelemetry(p,{promptLocal:false}); paintTele(p.id, (t||teleCache[p.id])?"ready":"none"); }
   catch(e){ paintTele(p.id, teleCache[p.id]?"ready":"none"); }
 }
@@ -1891,6 +1912,257 @@ async function pullState({force=false}={}){
 }
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
   stateBadge(stateSyncOn()?"☁ sync ligada — salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
+
+/* ===== Fase 2c: ciclo fechado da brain — write-back + read remoto no cérebro =====
+   O repo de estado É a Grande Brain: brain/<empresa>/<projeto>/{memoria,pendencias,
+   projeto}.md + INDEX.md. Painel commita edições (qualquer device); IAs commitam por
+   fora e o painel importa ao abrir o projeto (quando a pasta local não está no jogo). */
+const queuedBrainPids=new Set();
+let brainPushTimer=null, brainPushing=false;
+const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
+function brainDirOf(c,p){ return `brain/${slug(c.name)}/${slug(p.name)}`; }
+function brainBadge(txt, ok){
+  const el=document.getElementById("brainCloudBadge");
+  if(el){ el.textContent=txt; el.style.color = ok===false ? "var(--warn)" : "var(--tx3)"; }
+}
+function genIndexMd(){
+  const site="https://antonioz2022.github.io/workspace/";
+  let out=`# 🧠 INDEX — Mapa-mestre do Workspace do Antonio\n\n`+
+    `> **IA: comece por aqui.** Este arquivo diz o que existe e onde encontrar TUDO sobre\n`+
+    `> cada empresa/projeto. Regras de uso em [LEIA-ME-IA.md](LEIA-ME-IA.md).\n`+
+    `> Gerado pelo painel Workspace (${site}) — não editar à mão.\n`;
+  for(const c of DB.companies){
+    const cs=slug(c.name);
+    out+=`\n## ${c.name}${c.desc?` — ${c.desc}`:""}\n`;
+    out+=`Perfil: [brain/${cs}/empresa.md](brain/${cs}/empresa.md) · Brand kit: [brain/${cs}/brand/](brain/${cs}/brand/)\n`;
+    for(const p of c.projects){
+      const d=brainDirOf(c,p);
+      out+=`\n### ${p.name} (${p.status||"ativo"})\n`;
+      if(p.desc) out+=`${p.desc}\n`;
+      out+=`- **Memória viva**: [${d}/memoria.md](${d}/memoria.md)\n`;
+      out+=`- **Pendências** (${(p.todos||[]).filter(t=>!t.done).length} abertas): [${d}/pendencias.md](${d}/pendencias.md)\n`;
+      out+=`- **Cartão (serviços/custos)**: [${d}/projeto.md](${d}/projeto.md)\n`;
+      out+=`- **Arquivos/assets**: [${d}/assets/](${d}/assets/)\n`;
+      if(p.github) out+=`- **Código (git)**: \`${p.github}\` (privado)\n`;
+      if(p.local) out+=`- **Pasta local (PC do Antonio)**: \`${p.local}\`\n`;
+      const links=(p.apps||[]).filter(a=>a.url||a.dash).map(a=>`${a.name}: ${a.url||a.dash}`);
+      if(links.length) out+=`- **Serviços**: ${links.join(" · ")}\n`;
+    }
+  }
+  out+=`\n---\n\n- \`state.json\` — estado do painel Workspace (uso interno do app)\n`+
+    `- Painel público (interface): repo \`antonioz2022/workspace\` → ${site}\n`;
+  return out;
+}
+async function putBrainFile(path, text, msg){
+  const cur=await ghGetFile(stateRepo(), path).catch(()=>null);
+  if(cur && cur.text===text) return false;   // sem mudança → sem commit
+  await ghPutFile(stateRepo(), path, text, cur&&cur.sha, msg);
+  return true;
+}
+function queueBrainPush(){
+  if(!stateSyncOn()) return;
+  for(const c of DB.companies) for(const p of c.projects)
+    if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
+  if(!queuedBrainPids.size) return;
+  clearTimeout(brainPushTimer);
+  brainPushTimer=setTimeout(flushBrainPush, 4500);
+}
+async function flushBrainPush(){
+  if(brainPushing||!stateSyncOn()||!queuedBrainPids.size) return;
+  brainPushing=true;
+  const pids=[...queuedBrainPids]; queuedBrainPids.clear();
+  try{
+    brainBadge("☁ salvando no cérebro…");
+    for(const pid of pids){
+      const f=findNode(pid); if(!f||f.type!=="pj") continue;
+      const d=brainDirOf(f.co,f.pj);
+      await putBrainFile(`${d}/memoria.md`, f.pj.context||`# Memória — ${f.pj.name}\n`, "brain: memória — "+f.pj.name);
+      await putBrainFile(`${d}/pendencias.md`, serTodos(f.pj), "brain: pendências — "+f.pj.name);
+      await putBrainFile(`${d}/projeto.md`, genProjetoMd(f.co,f.pj), "brain: projeto — "+f.pj.name);
+    }
+    await putBrainFile("INDEX.md", genIndexMd(), "brain: INDEX atualizado");
+    brainBadge("☁ salvo no cérebro "+hhmm(), true);
+  }catch(e){
+    pids.forEach(id=>queuedBrainPids.add(id));   // re-enfileira pra próxima
+    brainBadge("☁ falha: "+(e.message||e), false);
+  }
+  brainPushing=false;
+}
+/* read remoto: quando NÃO há pasta local do cérebro (celular/outro PC), o repo é a fonte */
+async function pullBrainRemote(c,p){
+  if(!stateSyncOn() || brainDir) return false;
+  if(p._memDirty||p._todoDirty) return false;   // edição local pendente vence (sobe já já)
+  const d=brainDirOf(c,p);
+  let changed=false;
+  const mem=await ghGetFile(stateRepo(), `${d}/memoria.md`).catch(()=>null);
+  if(mem && mem.text!==p.context){ p.context=mem.text; changed=true; }
+  const pen=await ghGetFile(stateRepo(), `${d}/pendencias.md`).catch(()=>null);
+  if(pen){ const t=parseTodos(pen.text); if(JSON.stringify(t)!==JSON.stringify(p.todos)){ p.todos=t; changed=true; } }
+  if(changed){
+    save();
+    if(sel && sel.id===p.id && document.activeElement!==document.getElementById("pjMemory")){
+      const f=findNode(p.id); if(f) openDrawer(f);
+    }
+    brainBadge("☁ atualizado do cérebro "+hhmm(), true);
+  }
+  return changed;
+}
+
+/* ===== Etapa C: Arquivos & Brand kit (empresa → brand/ · projeto → assets/) =====
+   Lê/sobe/apaga arquivos direto no repo-cérebro via Contents API — igual em qualquer
+   aparelho. Preview de imagem <1MB via base64 do próprio GET. */
+let filesDir=null, filesList=[];
+function b64bytes(buf){
+  const b=new Uint8Array(buf); let bin="";
+  for(let i=0;i<b.length;i+=0x8000) bin+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
+  return btoa(bin);
+}
+const IMG_RE=/\.(png|jpe?g|gif|webp|svg|ico|bmp)$/i;
+function fmtSize(n){ return n>=1048576 ? (n/1048576).toFixed(1)+" MB" : n>=1024 ? Math.round(n/1024)+" KB" : n+" B"; }
+function filesSectionHtml(){
+  return `<div class="dr-sec">🎨 Arquivos & Brand kit</div><div id="filesWrap"><div class="dr-desc" style="color:var(--tx3)">carregando…</div></div>`;
+}
+function filesDirFor(f){
+  if(f.type==="co") return `brain/${slug(f.co.name)}/brand`;
+  if(f.type==="pj") return `brain/${slug(f.co.name)}/${slug(f.pj.name)}/assets`;
+  return null;
+}
+async function hydrateFiles(f){
+  const wrap=document.getElementById("filesWrap"); if(!wrap) return;
+  filesDir=filesDirFor(f); filesList=[];
+  if(!stateSyncOn()){
+    wrap.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">Pra ver/subir arquivos, configura o token + repo do cérebro em <b>⚙ Contas</b>.</div>`;
+    return;
+  }
+  let items=null;
+  try{ items=await ghGet(`/repos/${stateRepo()}/contents/${filesDir}`); }
+  catch(e){ wrap.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; return; }
+  filesList=(Array.isArray(items)?items:[]).filter(x=>x.type==="file" && x.name!==".gitkeep" && x.name!=="brand.md");
+  const rows=filesList.map((x,i)=>`
+    <div class="mini-item" style="cursor:default">
+      <span class="mi-emoji" id="fprev-${i}" style="width:34px;height:34px;border-radius:8px;background:rgba(0,0,0,.3);display:grid;place-items:center;overflow:hidden">${IMG_RE.test(x.name)?"🖼":"📄"}</span>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(x.name)}<span style="color:var(--tx3);font-size:11px"> · ${fmtSize(x.size)}</span></span>
+      <span class="x" title="excluir do cérebro" onclick="deleteBrainFile(${i})">✕</span>
+    </div>`).join("");
+  wrap.innerHTML=`${rows||'<div class="dr-desc" style="color:var(--tx3)">nenhum arquivo ainda</div>'}
+    <div style="margin-top:10px; display:flex; gap:8px; align-items:center">
+      <input type="file" id="brainFileInput" multiple style="display:none" onchange="uploadBrainFiles(event)">
+      <button class="btn sm primary" onclick="document.getElementById('brainFileInput').click()">⬆ Subir arquivos</button>
+      <span id="filesStatus" style="font-size:11px;color:var(--tx3)"></span>
+    </div>
+    <div style="font-size:11px;color:var(--tx3);margin-top:6px">vão pro cérebro (<code>${esc(filesDir)}</code>) — IAs enxergam de lá</div>`;
+  // previews de imagem (<1MB) — GET individual devolve o base64
+  filesList.forEach(async (x,i)=>{
+    if(!IMG_RE.test(x.name) || x.size>1048576) return;
+    try{
+      const j=await ghGet(`/repos/${stateRepo()}/contents/${filesDir}/${encodeURIComponent(x.name)}`);
+      if(j && j.content){
+        const mime=x.name.toLowerCase().endsWith(".svg")?"image/svg+xml":"image/"+x.name.split(".").pop().toLowerCase().replace("jpg","jpeg");
+        const el=document.getElementById("fprev-"+i);
+        if(el) el.innerHTML=`<img src="data:${mime};base64,${j.content.replace(/\s/g,"")}" style="width:100%;height:100%;object-fit:cover">`;
+      }
+    }catch(e){}
+  });
+}
+async function uploadBrainFiles(ev){
+  const files=[...(ev.target.files||[])]; ev.target.value="";
+  if(!files.length||!filesDir) return;
+  const st=document.getElementById("filesStatus");
+  let done=0;
+  for(const file of files){
+    if(file.size>8*1048576){ alert(`"${file.name}" tem ${fmtSize(file.size)} — acima do limite de 8 MB, pulei.`); continue; }
+    if(st) st.textContent=`subindo ${file.name}…`;
+    try{
+      const buf=await file.arrayBuffer();
+      const path=`${filesDir}/${file.name}`;
+      const cur=await ghGetFile(stateRepo(), path).catch(()=>null);
+      const sha=cur?cur.sha:undefined;
+      const tok=(DB.settings||{}).githubToken;
+      const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(path)}`,{
+        method:"PUT",
+        headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
+        body:JSON.stringify(Object.assign({message:"brain: arquivo — "+file.name, content:b64bytes(buf)}, sha?{sha}:{}))});
+      if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){} throw new Error("GitHub "+r.status+(d?" · "+d:"")); }
+      done++;
+    }catch(e){ alert(`Falha ao subir "${file.name}": ${e.message||e}`); }
+  }
+  if(st) st.textContent=done?`✓ ${done} arquivo(s) no cérebro`:"";
+  if(sel){ const f=findNode(sel.id); if(f&&(f.type==="co"||f.type==="pj")) hydrateFiles(f); }
+}
+async function deleteBrainFile(i){
+  const x=filesList[i]; if(!x||!filesDir) return;
+  if(!confirm(`Excluir "${x.name}" do cérebro?`)) return;
+  try{
+    const tok=(DB.settings||{}).githubToken;
+    const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(filesDir+"/"+x.name)}`,{
+      method:"DELETE",
+      headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
+      body:JSON.stringify({message:"brain: remove — "+x.name, sha:x.sha})});
+    if(!r.ok) throw new Error("GitHub "+r.status);
+    if(sel){ const f=findNode(sel.id); if(f) hydrateFiles(f); }
+  }catch(e){ alert("Excluir: "+(e.message||e)); }
+}
+
+/* ===== Etapa E: 🎛 Cockpit — todos os projetos num relance ===== */
+function cockpitRows(){
+  const rows=[];
+  for(const c of DB.companies) for(const p of c.projects){
+    const t=teleCache[p.id];
+    const open=(p.todos||[]).filter(x=>!x.done).length;
+    const alerts=(p.apps||[]).filter(a=>a.alert).length
+      + (p.apps||[]).filter(a=>a.health && pingCache[a.id] && pingCache[a.id].cls==="bad").length;
+    const commitTs=t&&t.git?t.git.ts:null;
+    const staleDays=commitTs?(Date.now()-commitTs)/86400000:null;
+    const score=alerts*3 + open + (staleDays!==null&&staleDays>7?2:0) + (p.status==="ativo"?0:-1);
+    rows.push({c,p,t,open,alerts,commitTs,score});
+  }
+  return rows.sort((a,b)=>b.score-a.score);
+}
+function renderCockpit(){
+  const el=document.getElementById("cockpitBody"); if(!el) return;
+  const rows=cockpitRows();
+  const totCost=DB.companies.reduce((s,c)=>s+coCost(c),0);
+  el.innerHTML=`
+    <div class="chips" style="margin-bottom:12px">
+      <span class="chip">${rows.length} projeto(s)</span>
+      <span class="chip">${rows.reduce((s,r)=>s+r.open,0)} pendência(s) aberta(s)</span>
+      <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
+      <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
+    </div>
+    ${rows.map(r=>{
+      const dot=r.alerts>0?"🔴":(r.open>0?"🟡":"🟢");
+      const commit=r.commitTs?`último commit ${agoStr(r.commitTs)}`:(r.t?"sem git":"telemetria não lida");
+      const src=r.t?(r.t.source==="github"?"☁":"📁"):"";
+      return `<div class="mini-item" onclick="closeModals();jumpTo('${r.p.id}')">
+        <span class="mi-emoji">${r.p.img?`<img src="${esc(r.p.img)}" style="width:26px;height:26px;object-fit:contain;vertical-align:middle">`:esc(r.p.emoji||"🚀")}</span>
+        <span style="flex:1;min-width:0">
+          <b>${esc(r.p.name)}</b> <span style="color:var(--tx3);font-size:11px">· ${esc(r.c.name)}</span><br>
+          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src} · ~US$ ${pjCost(r.p).toFixed(0)}/mês</span>
+        </span>
+        <span class="arrow">→</span>
+      </div>`;
+    }).join("")}`;
+}
+function openCockpit(){
+  renderCockpit();
+  document.getElementById("cockpitModal").classList.add("open");
+  // telemetria fresca em background pros que dá (pasta concedida ou repo+token)
+  (async()=>{
+    for(const c of DB.companies) for(const p of c.projects){
+      try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
+    }
+    renderCockpit();
+  })();
+}
+async function cockpitRefreshAll(){
+  const el=document.getElementById("cockpitBody");
+  if(el) el.insertAdjacentHTML("afterbegin",`<div class="dr-desc" id="ckLoading" style="color:var(--tx3)">atualizando telemetria + pings…</div>`);
+  for(const c of DB.companies) for(const p of c.projects){
+    try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
+    for(const a of p.apps) if(a.health){ if(pingCache[a.id]) pingCache[a.id].fresh=false; ping(a); }
+  }
+  renderCockpit();
+}
 async function syncStateNow(){
   if(!stateSyncOn()){ alert("Cola o token E o repo de estado (owner/repo privado) primeiro."); return; }
   const pulled=await pullState({force:false});
