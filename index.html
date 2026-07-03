@@ -355,7 +355,7 @@
   <div class="f"><label>Status</label>
     <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
   </div>
-  <div class="f"><label>Repositório GitHub (owner/repo — opcional; usado no modo remoto)</label><input id="pjGithub" placeholder="ex.: antonioz2022/DragonblockGP"></div>
+  <div class="f"><label>Repositório GitHub (owner/repo — auto-sugerido; usado no modo remoto)</label><input id="pjGithub" list="ghRepoList" placeholder="ex.: antonioz2022/DragonblockGP"><datalist id="ghRepoList"></datalist></div>
   <div class="f"><label>Pasta local no PC (opcional — entra no INDEX da brain p/ IAs)</label><input id="pjLocal" placeholder="ex.: C:\Users\anton\Desktop\Mine M\DBGP\DragonblockGP"></div>
   <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
     <input type="file" id="pjImgFile" accept="image/*" onchange="pickLogo(event,'pj')">
@@ -977,6 +977,8 @@ function openPjModal(id){
   document.getElementById("pjStatus").value=p?(p.status||"ativo"):"ativo";
   document.getElementById("pjGithub").value=p?(p.github||""):"";
   document.getElementById("pjLocal").value=p?(p.local||""):"";
+  (async()=>{ const rs=await ghMyRepos(); const dl=document.getElementById("ghRepoList");
+    if(dl) dl.innerHTML=rs.map(r=>`<option value="${esc(r)}">`).join(""); })();
   pendingLogo.pj=undefined;
   document.getElementById("pjImgFile").value="";
   showLogoPrev("pj", p&&p.img ? p.img : null);
@@ -990,14 +992,16 @@ function savePj(){
     github:document.getElementById("pjGithub").value.trim(),
     local:document.getElementById("pjLocal").value.trim()};
   if(pendingLogo.pj!==undefined){ data.img = pendingLogo.pj || ""; if(pendingLogo.pj) data.imgFit="contain"; }
+  if(!data.github) data.github=ghAutoMatchRepo(name);   // conecta sozinho ao repo com nome parecido
   if(editingPj){ Object.assign(findNode(editingPj).pj, data); }
   else{
     const co=findNode(pjTargetCo).co;
     const id=uid();
-    co.projects.push({id, ...data, apps:[], todos:[]});
+    // nasce "dirty" → o próximo flush cria brain/<empresa>/<projeto>/ no cérebro sozinho
+    co.projects.push({id, ...data, apps:[], todos:[], _memDirty:true, _todoDirty:true});
     expanded.add(co.id); newborn.add(id);
   }
-  save(); closeModals(); render();
+  save(); scheduleSync(); closeModals(); render();
 }
 function delPj(id){
   const f=findNode(id);
@@ -1095,7 +1099,7 @@ const PROV_PRESETS = {
 };
 let editingProv=null;
 
-function setGithubToken(v){ DB.settings=DB.settings||{}; DB.settings.githubToken=(v||"").trim(); save();
+function setGithubToken(v){ DB.settings=DB.settings||{}; DB.settings.githubToken=(v||"").trim(); ghRepoListCache=null; save();
   const s=document.getElementById("ghTokenStatus"); if(s) s.textContent=DB.settings.githubToken?"✓ token salvo neste navegador":""; }
 function openAiModal(){ renderProvs(); document.getElementById("provForm").style.display="none";
   DB.settings=DB.settings||{};
@@ -1639,6 +1643,23 @@ async function ghRepoTelemetry(owner,repo){
     if(dirs.length) out.specs={count:dirs.length, last:dirs[dirs.length-1]};
   }
   return out;
+}
+/* repos que o token enxerga — pro autocomplete e o auto-match de projeto novo */
+let ghRepoListCache=null;
+async function ghMyRepos(){
+  if(ghRepoListCache) return ghRepoListCache;
+  if(!(DB.settings||{}).githubToken) return [];
+  try{
+    const j=await ghGet("/user/repos?per_page=100&sort=updated");
+    ghRepoListCache=(Array.isArray(j)?j:[]).map(r=>r.full_name);
+  }catch(e){ ghRepoListCache=[]; }
+  return ghRepoListCache;
+}
+function ghAutoMatchRepo(name){
+  const rs=ghRepoListCache||[]; const s=slug(name);
+  return rs.find(r=>slug(r.split("/")[1])===s)
+      || rs.find(r=>{ const rn=slug(r.split("/")[1]); return rn.includes(s)||s.includes(rn); })
+      || "";
 }
 async function detectRepoFromGit(dir){
   try{
