@@ -2436,13 +2436,25 @@ function renderWorkspaceState(){
     </div>
     <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:8px"></div>
     <details style="margin-top:10px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Avançado</summary>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
         <button class="btn sm" onclick="disconnectWorkspace()">Desconectar</button>
-        <button class="btn sm danger" onclick="deleteWorkspace()">Apagar workspace</button>
+        <span id="wsAdminZone" style="font-size:11px;color:var(--tx3)">verificando permissão…</span>
       </div>
-      <p style="font-size:11px;color:var(--tx3);margin:8px 0 0">Desconectar = só some daqui (repo fica salvo). Apagar = remove o repo do GitHub de vez.</p>
+      <p style="font-size:11px;color:var(--tx3);margin:8px 0 0">Desconectar = só some daqui (repo fica salvo). Apagar = remove o repo do GitHub de vez — só o admin da workspace pode.</p>
     </details>`;
   if(stateSyncOn()) stateBadge("☁ sincronizada · salva sozinho ao editar", true);
+  checkWsAdmin();
+}
+async function checkWsAdmin(){
+  const zone=document.getElementById("wsAdminZone"); if(!zone) return;
+  try{
+    const info=await ghGet("/repos/"+stateRepo());
+    const admin=!!(info&&info.permissions&&info.permissions.admin);
+    const z=document.getElementById("wsAdminZone"); if(!z) return; // modal fechou no meio
+    z.outerHTML = admin
+      ? `<button class="btn sm danger" onclick="deleteWorkspace()">Apagar workspace</button>`
+      : `<span style="font-size:11px;color:var(--tx3)">🔒 só o admin da workspace pode apagá-la</span>`;
+  }catch(e){ const z=document.getElementById("wsAdminZone"); if(z) z.textContent="(não deu pra checar permissão)"; }
 }
 async function createWorkspace(){
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub primeiro.","warn"); return; }
@@ -2479,6 +2491,10 @@ async function disconnectWorkspace(){
 }
 async function deleteWorkspace(){
   const repo=stateRepo(); if(!repo) return;
+  // defesa: só o admin da workspace pode apagar (o GitHub também barra, mas avisamos claro)
+  try{ const info=await ghGet("/repos/"+repo);
+    if(!(info&&info.permissions&&info.permissions.admin)){ uiToast("🔒 Só o admin da workspace pode apagá-la.","warn"); return; }
+  }catch(e){}
   const typed=await uiPrompt({title:"⚠️ Apagar a workspace PARA SEMPRE?", danger:true,
     message:`Isso APAGA o repositório "${repo}" do teu GitHub de forma PERMANENTE.\n\nVocê vai PERDER TUDO que está salvo nele: empresas, projetos, memórias, pendências e todo o histórico da workspace. NÃO tem como desfazer, nem eu nem o GitHub recuperam.\n\nSe tem certeza, digite o nome exato do repositório pra confirmar:`,
     placeholder:repo, okLabel:"Apagar tudo de vez", confirmText:repo});
@@ -2893,12 +2909,6 @@ async function cockpitRefreshAll(){
   renderCockpit();
   renderActivityFeed();
 }
-async function syncStateNow(){
-  if(!stateSyncOn()){ alert("Cola o token E o repo de estado (owner/repo privado) primeiro."); return; }
-  const pulled=await pullState({force:false});
-  if(!pulled) await pushState();
-}
-
 /* ===== 🔌 Claudes conectados — gestão das conexões do MCP da brain =====
    O worker expõe /admin/connections (GET/DELETE), autenticado com o MESMO PAT do
    painel (ele confere no GitHub que o dono é o Antonio). Desconectar = deleteClient
