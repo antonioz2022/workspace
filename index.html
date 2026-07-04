@@ -273,6 +273,19 @@
   .typing{display:inline-flex; gap:4px; padding:4px 2px}
   .typing i{width:6px;height:6px;border-radius:50%;background:var(--tx3); animation:tp 1s infinite}
   .typing i:nth-child(2){animation-delay:.18s}.typing i:nth-child(3){animation-delay:.36s}
+
+  /* ===== 💬 chat dock (copiloto lateral) ===== */
+  #dock{position:fixed; top:70px; right:0; bottom:0; width:min(370px,94vw); z-index:18;
+    display:flex; flex-direction:column; background:var(--glass); backdrop-filter:blur(22px);
+    border-left:1px solid var(--line2); box-shadow:-20px 0 50px rgba(0,0,0,.42);
+    transition:transform .28s cubic-bezier(.2,.9,.3,1)}
+  #dock.min{transform:translateX(105%)}
+  #dockFab{position:fixed; bottom:22px; right:22px; z-index:18; width:54px; height:54px; border-radius:50%;
+    border:none; cursor:pointer; font-size:23px; background:linear-gradient(135deg,#7C4FF0,#9D6BFF); color:#fff;
+    box-shadow:0 8px 26px rgba(139,92,246,.45); display:none}
+  #dock.min + #dockFab{display:grid; place-items:center}
+  #dockFab:hover{filter:brightness(1.1)}
+  @media(max-width:640px){ #dock{top:0; width:100vw; border-left:none} }
   @keyframes tp{40%{transform:translateY(-4px); background:var(--ac2)}}
   .prov-item{display:flex; align-items:center; gap:11px; background:var(--glass2); border:1px solid var(--line);
     padding:10px 14px; border-radius:12px; margin-bottom:8px}
@@ -594,6 +607,22 @@
   <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyRunbookPrompt()">✨ Sugerir runbook (p/ IA)</button></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveApp()">Salvar</button></div>
 </div></div>
+
+<!-- 💬 chat dock (copiloto lateral) -->
+<div id="dock">
+  <div class="chat-head">
+    <span style="font-size:16px">💬</span>
+    <h3 style="flex:1">Córtex</h3>
+    <select id="dockModel" onchange="dockModelChanged()" title="modelo"></select>
+    <button class="back" onclick="dockToggleMin()" title="minimizar">─</button>
+  </div>
+  <div class="chat-msgs" id="dockBody"></div>
+  <div class="composer" id="dockComposer">
+    <textarea id="dockInput" rows="1" placeholder="pergunte algo…" onkeydown="dockKey(event)"></textarea>
+    <button class="send" id="dockSendBtn" onclick="dockSend()">➤</button>
+  </div>
+</div>
+<button id="dockFab" onclick="dockToggleMin()" title="abrir chat">💬</button>
 
 <script>
 /* ================= SEED ================= */
@@ -1568,14 +1597,14 @@ function saveProv(){
   if(data.kind==="openai" && !data.baseUrl) return alert("OpenAI-compatível precisa da Base URL.");
   if(editingProv){ Object.assign(getProv(editingProv), data); }
   else{ DB.settings.providers.push({id:uid(), ...data}); }
-  save(); renderProvs();
+  save(); renderProvs(); renderDock();
   document.getElementById("provForm").style.display="none";
 }
 async function delProv(id){
   const p=getProv(id);
   if(!(await uiConfirm(`Remover a conta "${p.name}"? Os chats que a usam vão pedir outra conta.`,{danger:true,okLabel:"Remover"}))) return;
   DB.settings.providers = PROVS().filter(x=>x.id!==id);
-  save(); renderProvs();
+  save(); renderProvs(); renderDock();
 }
 
 /* ================= IA: chats ================= */
@@ -1832,6 +1861,75 @@ async function streamOpenAI(prov, model, system, messages, onDelta){
     const d=ev.choices && ev.choices[0] && ev.choices[0].delta;
     if(d && d.content) onDelta(d.content);
   });
+}
+
+/* ================= 💬 chat dock (copiloto lateral, sempre à mão) ================= */
+let dockBusy=false;
+function dockState(){ DB.settings=DB.settings||{}; DB.settings.dock=DB.settings.dock||{}; return DB.settings.dock; }
+function initDock(){ const d=dockState(); if(d.min===undefined) d.min=innerWidth<900; applyDockMin(); renderDock(); }
+function applyDockMin(){ const dock=document.getElementById("dock"); if(dock) dock.classList.toggle("min", !!dockState().min); }
+function dockToggleMin(){ const d=dockState(); d.min=!d.min; save(); applyDockMin(); if(!d.min){ renderDock(); const i=document.getElementById("dockInput"); if(i&&!i.disabled) i.focus(); } }
+function dockKey(e){ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); dockSend(); } }
+function dockModelChanged(){ const sel=document.getElementById("dockModel"); const opt=sel.options[sel.selectedIndex]; if(!opt) return; const d=dockState(); d.providerId=opt.dataset.prov; d.model=opt.value; save(); }
+function dockSystem(){
+  let s="Você é o copiloto do Córtex do Antonio — um painel que organiza as empresas e projetos dele. Responda em PT-BR, direto e útil, sem enrolação.\n\nVisão geral da workspace:";
+  DB.companies.forEach(c=>{ s+=`\n• ${c.name}${c.desc?" — "+c.desc:""}`; c.projects.forEach(p=>{ s+=`\n   – ${p.name}${p.desc?": "+p.desc:""}`; }); });
+  if(!DB.companies.length) s+="\n(workspace ainda vazia)";
+  s+="\n\nA memória completa de cada projeto está no painel; se precisar de detalhe, diga o que falta em vez de inventar.";
+  return s;
+}
+function renderDock(){
+  const body=document.getElementById("dockBody"); if(!body) return;
+  const provs=PROVS(), sel=document.getElementById("dockModel"), comp=document.getElementById("dockComposer");
+  const setComposer=(on)=>{ if(!comp) return; const ta=comp.querySelector("textarea"), b=comp.querySelector(".send");
+    if(ta){ ta.disabled=!on; ta.placeholder=on?"pergunte algo…":"adicione uma IA pra conversar…"; } if(b) b.disabled=!on; };
+  if(!provs.length){
+    if(sel) sel.style.display="none"; setComposer(false);
+    body.innerHTML=`<div style="margin:auto; text-align:center; color:var(--tx2); font-size:13.5px; padding:22px; line-height:1.6">
+      <div style="font-size:34px; margin-bottom:6px">💬</div>
+      <b style="color:var(--tx)">Converse com a IA aqui.</b><br>
+      Escolha um modelo — <b>grátis, barato ou local</b> — e cole a API key. Ele já conhece a tua workspace.
+      <div style="margin-top:16px"><button class="btn sm primary" onclick="openAiModal();switchAccTab('chat')">Escolher IA →</button></div></div>`;
+    return;
+  }
+  if(sel) sel.style.display="";
+  const d=dockState();
+  if(!d.providerId || !getProv(d.providerId)) d.providerId=provs[0].id;
+  const prov=getProv(d.providerId);
+  if(!d.model || !prov.models.includes(d.model)) d.model=prov.models[0];
+  if(sel) sel.innerHTML=provs.flatMap(p=>(p.models||[]).map(m=>`<option value="${esc(m)}" data-prov="${p.id}" ${(p.id===d.providerId&&m===d.model)?"selected":""}>${esc(shortModel(m))}</option>`)).join("");
+  setComposer(true);
+  const msgs=d.messages||[];
+  body.innerHTML = msgs.length
+    ? msgs.map(m=> m.role==="user"?`<div class="bub user">${esc(m.content)}</div>`:`<div class="bub ai">${mdlite(m.content)}</div>`).join("")
+    : `<div style="margin:auto;text-align:center;color:var(--tx3);font-size:13px;padding:22px">Oi! Sou o copiloto do teu Córtex.<br>Pergunta o que quiser sobre teus projetos. 🧠</div>`;
+  body.scrollTop=body.scrollHeight;
+}
+async function dockSend(){
+  if(dockBusy) return;
+  const d=dockState(), prov=getProv(d.providerId);
+  const inp=document.getElementById("dockInput"), text=(inp.value||"").trim();
+  if(!text || !prov) return;
+  inp.value="";
+  d.messages=d.messages||[]; d.messages.push({role:"user",content:text}); save(); renderDock();
+  dockBusy=true; const sb=document.getElementById("dockSendBtn"); if(sb) sb.disabled=true;
+  const body=document.getElementById("dockBody");
+  body.insertAdjacentHTML("beforeend",`<div class="bub ai" id="dockLive"><span class="typing"><i></i><i></i><i></i></span></div>`); body.scrollTop=body.scrollHeight;
+  const sys=dockSystem(), hist=d.messages.slice(-20).map(m=>({role:m.role,content:m.content}));
+  let acc="";
+  const onDelta=t=>{ acc+=t; const el=document.getElementById("dockLive"); if(el){ el.innerHTML=mdlite(acc); body.scrollTop=body.scrollHeight; } };
+  try{
+    if(prov.kind==="anthropic") await streamAnthropic(prov, d.model, sys, hist, onDelta);
+    else await streamOpenAI(prov, d.model, sys, hist, onDelta);
+    d.messages.push({role:"assistant",content:acc||"(resposta vazia)",model:d.model});
+  }catch(err){
+    if(acc) d.messages.push({role:"assistant",content:acc+"\n\n[interrompido]",model:d.model});
+    const live=document.getElementById("dockLive"); if(live) live.remove();
+    body.insertAdjacentHTML("beforeend",`<div class="bub err">⚠ ${esc(String(err.message||err))}</div>`); body.scrollTop=body.scrollHeight;
+  }
+  save(); dockBusy=false; if(sb) sb.disabled=false;
+  if(acc) renderDock();
+  inp.focus();
 }
 
 /* ================= 🧠 CÉREBRO (Workspace/brain <-> IAs por arquivos) ================= */
@@ -3185,6 +3283,7 @@ setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true);
 
 /* ================= go ================= */
 render();
+initDock();
 if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
 ensureBrain();
 if(stateSyncOn()) setTimeout(()=>pullState().catch(()=>{}), 600);
