@@ -20,5 +20,13 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    // cross-browser só na verificação com modelo REAL (REAL_EMB=1): pesado demais pro CI.
+    // (firefox do Playwright não abre nesta máquina — erro SxS do mozglue; webkit cobre
+    // o motor mais restritivo pra module workers)
+    ...(process.env.REAL_EMB
+      ? [{ name: "webkit", use: { browserName: "webkit" } }]
+      : []),
+  ],
 });
