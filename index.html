@@ -1368,7 +1368,7 @@ function uiPrompt(opts){
   return new Promise(res=>{
     const ov=document.createElement("div"); ov.className="ui-ov";
     const dlg=document.createElement("div"); dlg.className="ui-dlg";
-    dlg.innerHTML=`${opts.title?`<h4>${esc(opts.title)}</h4>`:""}${opts.message?`<p>${esc(opts.message).replace(/\n/g,"<br>")}</p>`:""}
+    dlg.innerHTML=`${opts.title?`<h4 style="${opts.danger?"color:var(--bad)":""}">${esc(opts.title)}</h4>`:""}${opts.message?`<p style="${opts.danger?"color:var(--bad)":""}">${esc(opts.message).replace(/\n/g,"<br>")}</p>`:""}
       <input style="width:100%;margin-top:14px" placeholder="${esc(opts.placeholder||"")}">
       <div class="btns"><button class="btn">${esc(opts.cancelLabel||"Cancelar")}</button><button class="btn primary ok">${esc(opts.okLabel||"OK")}</button></div>`;
     const inp=dlg.querySelector("input"), ok=dlg.querySelector(".ok"), cancel=dlg.querySelector(".btns .btn:not(.ok)");
@@ -2479,7 +2479,9 @@ async function disconnectWorkspace(){
 }
 async function deleteWorkspace(){
   const repo=stateRepo(); if(!repo) return;
-  const typed=await uiPrompt({title:"Apagar workspace de vez?", message:`Isso APAGA o repositório ${repo} do GitHub — some tudo, sem volta. Digite o nome do repo pra confirmar:`, placeholder:repo, okLabel:"Apagar de vez", confirmText:repo});
+  const typed=await uiPrompt({title:"⚠️ Apagar a workspace PARA SEMPRE?", danger:true,
+    message:`Isso APAGA o repositório "${repo}" do teu GitHub de forma PERMANENTE.\n\nVocê vai PERDER TUDO que está salvo nele: empresas, projetos, memórias, pendências e todo o histórico da workspace. NÃO tem como desfazer, nem eu nem o GitHub recuperam.\n\nSe tem certeza, digite o nome exato do repositório pra confirmar:`,
+    placeholder:repo, okLabel:"Apagar tudo de vez", confirmText:repo});
   if(typed===null) return;
   try{
     const r=await fetch("https://api.github.com/repos/"+repo,{method:"DELETE",headers:ghApiHeaders()});
