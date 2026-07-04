@@ -92,6 +92,7 @@ function openDrawer(f){
       ${filesSectionHtml()}`;
     foot.innerHTML=`
       <button class="btn" onclick="openPjModalFor('${c.id}','${p.id}')">✎ Editar</button>
+      <button class="btn" onclick="exportProjectReport('${p.id}')" title="Baixa um status do projeto em Markdown">📄 Relatório</button>
       <button class="btn ghost" onclick="delPj('${p.id}')">Excluir projeto</button>`;
   }
 

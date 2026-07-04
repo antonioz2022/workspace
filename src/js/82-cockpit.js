@@ -95,6 +95,48 @@ function renderAgenda(){
   box.innerHTML=html;
 }
 
+/* ===== 📄 Relatório (status em markdown) — projeto ou workspace inteira ===== */
+function pjOverdue(p){ const t=todayStr(); return (p.todos||[]).filter(x=>!x.done && /^\d{4}-\d{2}-\d{2}$/.test(x.due||"") && x.due<t).length; }
+function reportTodoLine(t){
+  const meta=(t.prio?` \`${prioName[t.prio]||t.prio}\``:"")+(t.owner?` @${t.owner}`:"")+(t.due?` 📅${t.due} (${dueLabel(t.due)})`:"");
+  return `- [${t.done?"x":" "}] ${(t.t||"").split("\n")[0]}${meta}`;
+}
+function genProjectReport(c,p){
+  const open=(p.todos||[]).filter(t=>!t.done), done=(p.todos||[]).filter(t=>t.done);
+  let s=`# 📋 Relatório — ${p.name}\n_${c.name} · ${p.status||"ativo"} · gerado em ${nowStr()}_\n\n`;
+  if(p.desc) s+=`${p.desc}\n\n`;
+  s+=`## Resumo\n- **Serviços:** ${(p.apps||[]).length} (~US$ ${pjCost(p).toFixed(0)}/mês)\n`;
+  s+=`- **Pendências:** ${open.length} abertas de ${(p.todos||[]).length}${pjOverdue(p)?` (**${pjOverdue(p)} vencidas**)`:""}\n`;
+  if(p.github) s+=`- **GitHub:** \`${p.github}\`\n`;
+  if(p.local) s+=`- **Pasta local:** \`${p.local}\`\n`;
+  if(open.length) s+=`\n## Pendências abertas\n`+open.map(reportTodoLine).join("\n")+"\n";
+  if((p.apps||[]).length) s+=`\n## Serviços\n`+p.apps.map(a=>`- **${a.name}**${a.role?` — ${a.role}`:""}${a.plan?` · ${a.plan}`:""}${(parseFloat(a.cost)||0)>0?` · ~US$ ${parseFloat(a.cost).toFixed(0)}/mês`:" · grátis"}${a.url?` · ${a.url}`:""}`).join("\n")+"\n";
+  if(p.context) s+=`\n## Memória\n${p.context.trim()}\n`;
+  if(done.length) s+=`\n## Concluídas (${done.length})\n`+done.slice(-12).map(reportTodoLine).join("\n")+"\n";
+  return s;
+}
+function genWorkspaceReport(){
+  const totPj=DB.companies.reduce((s,c)=>s+c.projects.length,0);
+  const totCost=DB.companies.reduce((s,c)=>s+coCost(c),0);
+  const openTot=DB.companies.reduce((s,c)=>s+c.projects.reduce((q,p)=>q+(p.todos||[]).filter(t=>!t.done).length,0),0);
+  const overTot=overdueCount();
+  let s=`# 📊 Relatório da workspace\n_gerado em ${nowStr()}_\n\n`;
+  s+=`**${DB.companies.length}** empresa(s) · **${totPj}** projeto(s) · **~US$ ${totCost.toFixed(0)}/mês** · **${openTot}** pendência(s) aberta(s)${overTot?` · **${overTot} vencida(s)**`:""}\n\n`;
+  for(const c of DB.companies){
+    s+=`## ${c.emoji||"🏢"} ${c.name}${c.desc?` — ${c.desc}`:""}\n`;
+    if(!c.projects.length){ s+=`_(sem projetos)_\n\n`; continue; }
+    for(const p of c.projects){
+      const open=(p.todos||[]).filter(t=>!t.done).length, ov=pjOverdue(p);
+      s+=`- **${p.name}** (${p.status||"ativo"}) — ${open}/${(p.todos||[]).length} pendências${ov?` · ${ov} vencidas`:""} · ${(p.apps||[]).length} serviços · ~US$ ${pjCost(p).toFixed(0)}/mês${p.github?` · \`${p.github}\``:""}\n`;
+    }
+    s+="\n";
+  }
+  return s;
+}
+function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function exportReport(){ downloadFile(`cortex-relatorio-${todayStr()}.md`, genWorkspaceReport(), "text/markdown;charset=utf-8"); if(typeof uiToast==="function") uiToast("Relatório da workspace baixado (.md).","ok"); }
+function exportProjectReport(pid){ const f=findNode(pid); if(!f||f.type!=="pj") return; downloadFile(`relatorio-${slug(f.pj.name)}-${todayStr()}.md`, genProjectReport(f.co,f.pj), "text/markdown;charset=utf-8"); if(typeof uiToast==="function") uiToast("Relatório do projeto baixado (.md).","ok"); }
+
 /* ===== 📜 Feed de atividade — commits da brain traduzidos pra gente ===== */
 function feedLabel(msg){
   const via=/via MCP/i.test(msg);

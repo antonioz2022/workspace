@@ -302,8 +302,8 @@
 </div></div>
 
 <div class="overlay" id="searchModal"><div class="modal" style="width:min(600px,94vw)">
-  <h3>🔎 Buscar</h3>
-  <input id="searchInput" placeholder="empresa, projeto, pendência, serviço, memória…" oninput="runSearch()"
+  <h3>⌨️ Buscar ou rodar ação</h3>
+  <input id="searchInput" placeholder="uma ação (nova empresa, tema, agenda…) ou o que procura" oninput="runSearch()"
     onkeydown="if(event.key==='Enter'){const r=document.querySelector('#searchResults .mini-item'); if(r) r.click();}"
     style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:11px 14px; font-size:14px; font-family:inherit; margin-top:6px">
   <div id="searchResults" class="mini-list" style="margin-top:12px; max-height:52vh; overflow:auto"></div>

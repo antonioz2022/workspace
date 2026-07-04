@@ -22,6 +22,11 @@ function toggleTheme(){
   applyTheme(next); localStorage.setItem(LS_KEY+"-theme", next);
 }
 
+function downloadFile(name, text, mime){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:mime||"text/plain;charset=utf-8"}));
+  a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
 function exportData(){
   // NÃO exporta segredos: token do GitHub, chaves de IA, mcpUrl e histórico do dock ficam de fora
   const clean = (typeof sanitizeStateForSync==="function") ? sanitizeStateForSync() : DB;

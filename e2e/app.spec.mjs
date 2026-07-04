@@ -368,11 +368,56 @@ test("polish: skeleton na telemetria + estados vazios (cockpit/busca)", async ({
   await expect(page.locator("#cockpitBody .empty-mini")).toContainText("Sem projetos ainda");
   await page.evaluate(() => { DB.companies = window.__bkp; closeModals(); });
 
-  // busca: vazia + sem resultado
+  // busca: dica ao abrir + sem resultado
   await page.keyboard.press("Control+k");
-  await expect(page.locator("#searchResults .empty-mini")).toContainText("Digite ao menos 2 letras");
+  await expect(page.locator("#searchResults .empty-mini")).toContainText("digite 2+ letras");
   await page.fill("#searchInput", "zzxqwops");
   await expect(page.locator("#searchResults .empty-mini")).toContainText("Nada encontrado");
+});
+
+test("command palette: Ctrl+K roda ações (tema, agenda) além de buscar", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await page.keyboard.press("Control+k");
+  await expect(page.locator("#searchModal")).toHaveClass(/open/);
+  // ao abrir, mostra ações sugeridas
+  await expect(page.locator("#searchResults .agenda-h", { hasText: "Ações" })).toBeVisible();
+  // digitar "tema" filtra a ação e o Enter roda ela (alterna o tema)
+  await page.fill("#searchInput", "tema");
+  const themeCmd = page.locator('#searchResults .mini-item:has-text("Alternar tema")');
+  await expect(themeCmd).toBeVisible();
+  await themeCmd.click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  // "agenda" abre a Agenda
+  await page.keyboard.press("Control+k");
+  await page.fill("#searchInput", "agenda");
+  await page.locator('#searchResults .mini-item:has-text("Agenda de prazos")').click();
+  await expect(page.locator("#agendaModal")).toHaveClass(/open/);
+  await page.evaluate(() => closeModals());
+  // busca de entidade ainda funciona (2+ letras)
+  await page.keyboard.press("Control+k");
+  await page.fill("#searchInput", "Acme");
+  await expect(page.locator("#searchResults .agenda-h", { hasText: "Resultados" })).toBeVisible();
+});
+
+test("relatório: workspace (.md) e projeto (.md) baixam com o conteúdo certo", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  await abrirDrawerProjeto(page, "Site");
+  await page.evaluate(() => { const p = DB.companies[0].projects[0]; p.todos = [{ t: "publicar landing", done: false, prio: "alta" }]; save(); openDrawer(findNode(p.id)); });
+  // relatório do projeto (botão no rodapé)
+  const [dl1] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "📄 Relatório" }).click()]);
+  const fs = await import("node:fs");
+  const md1 = fs.readFileSync(await dl1.path(), "utf8");
+  expect(md1).toContain("# 📋 Relatório — Site");
+  expect(md1).toContain("publicar landing");
+  expect(dl1.suggestedFilename()).toMatch(/\.md$/);
+  // relatório da workspace (pela paleta)
+  await page.keyboard.press("Control+k");
+  const [dl2] = await Promise.all([page.waitForEvent("download"), page.locator('#searchResults .mini-item:has-text("Relatório da workspace")').click()]);
+  const md2 = fs.readFileSync(await dl2.path(), "utf8");
+  expect(md2).toContain("# 📊 Relatório da workspace");
+  expect(md2).toContain("Acme");
+  expect(md2).toContain("Site");
 });
 
 test("agenda de prazos: agrupa por urgência, conta vencidas e navega", async ({ page }) => {
