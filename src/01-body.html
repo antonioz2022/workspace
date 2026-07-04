@@ -40,6 +40,7 @@
     <div class="more-menu" id="moreMenu" role="menu">
       <button class="mm" role="menuitem" id="themeToggle" onclick="closeMore();toggleTheme()">☀️ Tema claro</button>
       <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
+      <button class="mm" role="menuitem" onclick="closeMore();openAsk()">🧠 Perguntar à brain</button>
       <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>
       <button class="mm" role="menuitem" onclick="closeMore();openAgenda()">📅 Agenda de prazos</button>
       <button class="mm" role="menuitem" onclick="closeMore();exportData()">⬇ Backup</button>
@@ -140,6 +141,21 @@
   <div class="f"><label>Para</label><select id="linkTo"></select></div>
   <div class="f"><label>Nota (opcional)</label><input id="linkNote" placeholder="ex.: posta os shorts do mod; usa o mesmo worker"></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveLinkUi()">Criar relação</button></div>
+</div></div>
+
+<div class="overlay" id="askModal"><div class="modal" style="max-width:640px">
+  <h3>🧠 Perguntar à brain <span style="font-weight:400;font-size:12px;color:var(--tx3)">— busca por significado</span></h3>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+    <input id="askInput" placeholder="pergunte qualquer coisa: quais projetos usam o Kommo? o que conecta X e Y?" style="flex:1" onkeydown="if(event.key==='Enter')askRun()">
+    <button class="btn sm primary" onclick="askRun()">Perguntar</button>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <button class="btn sm" id="askReindexBtn" onclick="askReindex()">↻ Reindexar</button>
+    <span id="askStatus" style="font-size:11.5px"></span>
+  </div>
+  <div id="askResults"></div>
+  <div id="askAnswer"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
 </div></div>
 
 <div class="overlay" id="pjModal"><div class="modal">

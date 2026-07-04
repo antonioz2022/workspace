@@ -3,6 +3,7 @@ function snippet(text,q){ const i=(text||"").toLowerCase().indexOf(q); if(i<0) r
 const COMMANDS=[
   {icon:"🏢", label:"Nova empresa", kw:"criar company adicionar", run:()=>openCoModal()},
   {icon:"📅", label:"Agenda de prazos", kw:"deadline vencidas prazo pendencias", run:()=>openAgenda()},
+  {icon:"🧠", label:"Perguntar à brain (busca semântica)", kw:"buscar semantica pergunta significado embeddings rag", run:()=>openAsk()},
   {icon:"🎛", label:"Cockpit", kw:"dashboard painel geral visao", run:()=>openCockpit()},
   {icon:"📄", label:"Relatório da workspace", kw:"report export markdown status", run:()=>exportReport()},
   {icon:"🗂", label:"Trocar / criar workspace", kw:"workspace repo mudar", run:()=>openWsModal()},

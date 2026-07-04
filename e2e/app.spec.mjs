@@ -622,6 +622,32 @@ test("grafo de conhecimento: relação criada pela UI aparece no drawer, no mapa
   expect(kept, "relação preservada no state.json do sync").toBeGreaterThan(0);
 });
 
+test("busca semântica: indexa a brain e ranqueia por significado (embedder fake determinístico)", async ({ page }) => {
+  await page.evaluate(() => {
+    // embedder fake: bag-of-words sobre um vocabulário — testa o pipeline sem baixar modelo
+    const vocab = ["publicar", "shorts", "video", "reserva", "hotel", "whatsapp", "kommo", "minecraft", "mod"];
+    window.setEmbedder(async (texts) => texts.map(t => {
+      const low = t.toLowerCase();
+      const v = vocab.map(w => low.split(w).length - 1);
+      const norm = Math.hypot(...v) || 1;
+      return v.map(x => x / norm);
+    }));
+    DB.companies = [
+      { id: "pulsar", name: "Pulsar", emoji: "📡", x: -300, y: 0, projects: [{ id: "pub", name: "Publicador", emoji: "🚀", x: -300, y: 200, apps: [], todos: [], chats: [], context: "Toolkit que publica shorts e video no youtube. Posta shorts do mod de minecraft." }] },
+      { id: "pousada", name: "Pousada", emoji: "🏖", x: 300, y: 0, projects: [{ id: "bot", name: "Atendente", emoji: "🤖", x: 300, y: 200, apps: [], todos: [], chats: [], context: "Bot de reserva de hotel via whatsapp e kommo." }] },
+    ];
+    save();
+  });
+  await page.evaluate(() => buildSemIndex());
+  const r1 = await page.evaluate(async () => (await semSearch("como faço uma reserva no hotel por whatsapp", 5)).results[0]);
+  expect(r1.scope, "reserva/hotel → Atendente da Pousada").toContain("Atendente");
+  const r2 = await page.evaluate(async () => (await semSearch("quero postar shorts e video", 5)).results[0]);
+  expect(r2.scope, "postar shorts/video → Publicador").toContain("Publicador");
+  // índice persiste no IndexedDB (recarrega da store, não da memória)
+  const n = await page.evaluate(async () => { semIndex = null; const idx = await loadSemIndex(); return idx ? idx.items.length : 0; });
+  expect(n, "índice salvo no IndexedDB").toBeGreaterThan(0);
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);
