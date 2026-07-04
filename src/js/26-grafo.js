@@ -86,14 +86,14 @@ function relationsSectionHtml(id){
 
 /* modal de nova relação */
 let linkFromId=null;
-function openLinkForm(fromId){
+function openLinkForm(fromId, preTo){
   const from=graphNode(fromId); if(!from) return;
   linkFromId=fromId;
   document.getElementById("linkFromLabel").textContent=`${kindIcon(from.kind)} ${from.label||from.name}`;
   document.getElementById("linkType").innerHTML=LINK_TYPES.map(t=>`<option value="${t.id}">${esc(t.label)}</option>`).join("");
   const others=graphNodes().filter(n=>n.id!==fromId);
   document.getElementById("linkTo").innerHTML = others.length
-    ? others.map(n=>`<option value="${esc(n.id)}">${kindIcon(n.kind)} ${esc(n.label||n.name)}</option>`).join("")
+    ? others.map(n=>`<option value="${esc(n.id)}"${n.id===preTo?" selected":""}>${kindIcon(n.kind)} ${esc(n.label||n.name)}</option>`).join("")
     : `<option value="">(nenhum outro nó no workspace)</option>`;
   document.getElementById("linkNote").value="";
   document.getElementById("linkModal").classList.add("open");

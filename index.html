@@ -599,8 +599,9 @@
     <input id="askInput" placeholder="pergunte qualquer coisa: quais projetos usam o Kommo? o que conecta X e Y?" style="flex:1" onkeydown="if(event.key==='Enter')askRun()">
     <button class="btn sm primary" onclick="askRun()">Perguntar</button>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <button class="btn sm" id="askReindexBtn" onclick="askReindex()">↻ Reindexar</button>
+    <button class="btn sm" onclick="askSuggest()" title="descobre relações do grafo por proximidade semântica">💡 Sugerir relações</button>
     <span id="askStatus" style="font-size:11.5px"></span>
   </div>
   <div id="askResults"></div>
@@ -1376,14 +1377,14 @@ function relationsSectionHtml(id){
 
 /* modal de nova relação */
 let linkFromId=null;
-function openLinkForm(fromId){
+function openLinkForm(fromId, preTo){
   const from=graphNode(fromId); if(!from) return;
   linkFromId=fromId;
   document.getElementById("linkFromLabel").textContent=`${kindIcon(from.kind)} ${from.label||from.name}`;
   document.getElementById("linkType").innerHTML=LINK_TYPES.map(t=>`<option value="${t.id}">${esc(t.label)}</option>`).join("");
   const others=graphNodes().filter(n=>n.id!==fromId);
   document.getElementById("linkTo").innerHTML = others.length
-    ? others.map(n=>`<option value="${esc(n.id)}">${kindIcon(n.kind)} ${esc(n.label||n.name)}</option>`).join("")
+    ? others.map(n=>`<option value="${esc(n.id)}"${n.id===preTo?" selected":""}>${kindIcon(n.kind)} ${esc(n.label||n.name)}</option>`).join("")
     : `<option value="">(nenhum outro nó no workspace)</option>`;
   document.getElementById("linkNote").value="";
   document.getElementById("linkModal").classList.add("open");
@@ -4103,6 +4104,7 @@ const COMMANDS=[
   {icon:"🏢", label:"Nova empresa", kw:"criar company adicionar", run:()=>openCoModal()},
   {icon:"📅", label:"Agenda de prazos", kw:"deadline vencidas prazo pendencias", run:()=>openAgenda()},
   {icon:"🧠", label:"Perguntar à brain (busca semântica)", kw:"buscar semantica pergunta significado embeddings rag", run:()=>openAsk()},
+  {icon:"💡", label:"Sugerir relações (por semântica)", kw:"grafo conexao descobrir relacao sugestao proximidade", run:()=>openSuggest()},
   {icon:"🎛", label:"Cockpit", kw:"dashboard painel geral visao", run:()=>openCockpit()},
   {icon:"📄", label:"Relatório da workspace", kw:"report export markdown status", run:()=>exportReport()},
   {icon:"🗂", label:"Trocar / criar workspace", kw:"workspace repo mudar", run:()=>openWsModal()},
@@ -4244,7 +4246,9 @@ async function cockpitRefreshAll(){
    e a busca é cosseno em JS (a brain é pequena). Embedder é PLUGÁVEL (troca por serviço
    hospedado depois; testes injetam um fake determinístico). */
 const EMB_MODEL="Xenova/paraphrase-multilingual-MiniLM-L12-v2";   // multilíngue: essencial p/ conteúdo em PT
-const SEMIDX_KEY="cortex-semindex";
+const SEMIDX_KEY="cortex-semindex";       // cache local (IndexedDB)
+const SEMIDX_PATH=".cortex/semindex.json"; // versão portátil no repo (aparelho novo puxa em vez de reconstruir)
+const dismissedPairs=new Set();           // sugestões dispensadas nesta sessão
 let _embPipe=null, _emb=null, semIndex=null;
 function setEmbedder(fn){ _emb=fn; }   // testes/serviço hospedado: fn(texts:string[]) -> vetores normalizados
 async function localEmbedder(texts){
@@ -4293,7 +4297,25 @@ async function buildSemIndex(onProgress){
   await idbSet(SEMIDX_KEY, semIndex);
   return semIndex;
 }
-async function loadSemIndex(){ if(!semIndex) semIndex=await idbGet(SEMIDX_KEY).catch(()=>null); return semIndex; }
+async function loadSemIndex(){
+  if(semIndex) return semIndex;
+  let idx=await idbGet(SEMIDX_KEY).catch(()=>null);
+  if((!idx || !idx.items) && typeof stateSyncOn==="function" && stateSyncOn()){
+    // aparelho novo: puxa o índice versionado do repo (não precisa reconstruir tudo)
+    const f=await ghGetFile(stateRepo(), SEMIDX_PATH).catch(()=>null);
+    if(f){ try{ idx=JSON.parse(f.text); await idbSet(SEMIDX_KEY, idx); }catch(e){} }
+  }
+  if(idx && idx.model && idx.model!==EMB_MODEL) idx=null;   // modelo diferente → vetores incompatíveis, reconstruir
+  semIndex=idx||null;
+  return semIndex;
+}
+/* publica o índice no repo (portátil entre aparelhos/contas). Fica em .cortex/ (fora das
+   listagens de brand/assets); é o mesmo conteúdo da brain + os vetores — nada de novo secreto. */
+async function publishSemIndex(){
+  if(!semIndex || !semIndex.items || typeof stateSyncOn!=="function" || !stateSyncOn() || typeof putBrainFile!=="function") return false;
+  try{ await putBrainFile(SEMIDX_PATH, JSON.stringify(semIndex), "brain: índice semântico"); return true; }
+  catch(e){ return false; }
+}
 function cosine(a,b){ let s=0, n=Math.min(a.length,b.length); for(let i=0;i<n;i++) s+=a[i]*b[i]; return s; }   // vetores normalizados → dot
 async function semSearch(query, k){
   const idx=await loadSemIndex();
@@ -4303,6 +4325,56 @@ async function semSearch(query, k){
   scored.sort((a,b)=>b.score-a.score);
   return {results:scored.slice(0, k||8)};
 }
+
+/* ===== 💡 Descoberta: sugere relações do grafo por proximidade semântica =====
+   Agrega os vetores dos trechos de cada nó → 1 vetor por nó; compara todos os pares e
+   sugere os mais próximos que AINDA não estão ligados (pulando pai-filho trivial). O tipo
+   da relação a IA não infere — quem aceita escolhe (abre o modal pré-preenchido). */
+function nodeEmbeddings(){
+  const idx=semIndex; if(!idx||!idx.items||!idx.items.length) return {};
+  const acc={};
+  for(const it of idx.items){ if(!it.goId||!it.vec) continue; const b=acc[it.goId]||(acc[it.goId]={sum:new Array(it.vec.length).fill(0), n:0}); for(let i=0;i<it.vec.length;i++) b.sum[i]+=it.vec[i]; b.n++; }
+  const out={};
+  for(const id in acc){ const b=acc[id], v=b.sum.map(x=>x/b.n), norm=Math.hypot.apply(null,v)||1; out[id]=v.map(x=>x/norm); }
+  return out;
+}
+function ancestorsOf(id){ const n=typeof graphNode==="function"?graphNode(id):null; if(!n) return []; if(n.kind==="pj") return [n.co.id]; if(n.kind==="ap") return [n.pj.id, n.co.id]; return []; }
+function sameBranch(a,b){ return ancestorsOf(a).indexOf(b)>=0 || ancestorsOf(b).indexOf(a)>=0; }
+async function suggestLinks(k){
+  await loadSemIndex();
+  if(!semIndex||!semIndex.items||!semIndex.items.length) return {needIndex:true, pairs:[]};
+  const emb=nodeEmbeddings(), ids=Object.keys(emb);
+  const linked=new Set((DB.links||[]).map(l=>[l.from,l.to].sort().join("|")));
+  const pairs=[];
+  for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
+    const a=ids[i], b=ids[j], key=[a,b].sort().join("|");
+    if(linked.has(key) || dismissedPairs.has(key) || sameBranch(a,b)) continue;
+    pairs.push({a, b, score:cosine(emb[a], emb[b])});
+  }
+  pairs.sort((x,y)=>y.score-x.score);
+  return {pairs:pairs.slice(0, k||12)};
+}
+async function askSuggest(){
+  const box=document.getElementById("askResults"), ans=document.getElementById("askAnswer"); if(ans) ans.innerHTML="";
+  box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">analisando proximidade entre os nós…</div>`;
+  const idx=await loadSemIndex();
+  if(!idx||!idx.items||!idx.items.length){ box.innerHTML=`<div class="empty-mini"><span class="ico">🧠</span>Monte o índice primeiro (<b>Reindexar</b>) pra eu sugerir relações.</div>`; return; }
+  let r; try{ r=await suggestLinks(12); }catch(e){ box.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; return; }
+  const hits=(r.pairs||[]).filter(p=>p.score>0.32);
+  if(!hits.length){ box.innerHTML=`<div class="empty-mini"><span class="ico">🕸</span>Nenhuma conexão nova óbvia por semântica — ou já estão todas ligadas. Reindexe se mudou muita coisa.</div>`; return; }
+  box.innerHTML=`<div class="agenda-h">💡 Relações sugeridas (por proximidade)</div>`+hits.map(p=>{
+    const na=graphNode(p.a), nb=graphNode(p.b);
+    return `<div class="mini-item" style="cursor:default">
+      <span class="mi-emoji" title="proximidade">${Math.round(p.score*100)}%</span>
+      <span style="flex:1;min-width:0"><b>${esc(na?na.name:"?")}</b> <span style="color:var(--tx3)">↔</span> <b>${esc(nb?nb.name:"?")}</b><br><span style="font-size:11px;color:var(--tx3)">${esc(na?(na.label||na.name):"")} · ${esc(nb?(nb.label||nb.name):"")}</span></span>
+      <button class="btn sm primary" onclick="acceptSuggest('${p.a}','${p.b}')" title="criar a relação — você escolhe o tipo">＋ Ligar</button>
+      <span class="x" title="dispensar" onclick="dismissSuggest('${p.a}','${p.b}')">✕</span>
+    </div>`;
+  }).join("")+`<div style="font-size:11px;color:var(--tx3);margin-top:8px">A proximidade sugere que se relacionam; o TIPO (publica, hospeda, depende…) você define ao ligar.</div>`;
+}
+function acceptSuggest(a,b){ closeModals(); if(typeof openLinkForm==="function") openLinkForm(a,b); }
+function dismissSuggest(a,b){ dismissedPairs.add([a,b].sort().join("|")); askSuggest(); }
+function openSuggest(){ openAsk(); askSuggest(); }
 
 /* ===== UI: modal "🧠 Perguntar à brain" ===== */
 function askIndexStatus(){
@@ -4328,7 +4400,8 @@ async function askReindex(){
   set("⏳ preparando…");
   try{
     await buildSemIndex((done,total)=>{ if(st) st.innerHTML=`<span style="color:var(--tx3)">indexando… ${done}/${total} trechos${done<total?" (baixando o modelo na 1ª vez pode demorar)":""}</span>`; });
-    askIndexStatus(); uiToast("Índice semântico pronto.","ok");
+    const pub=await publishSemIndex();   // versiona no repo → portátil pra outros aparelhos
+    askIndexStatus(); uiToast(pub?"Índice pronto e publicado no repo (portátil entre aparelhos).":"Índice semântico pronto (local).","ok");
   }catch(e){ if(st) st.innerHTML=`<span style="color:var(--warn)">falha ao indexar: ${esc(e.message||String(e))}</span>`; }
   set("↻ Reindexar"); askBuilding=false;
 }

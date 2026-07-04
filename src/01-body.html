@@ -149,8 +149,9 @@
     <input id="askInput" placeholder="pergunte qualquer coisa: quais projetos usam o Kommo? o que conecta X e Y?" style="flex:1" onkeydown="if(event.key==='Enter')askRun()">
     <button class="btn sm primary" onclick="askRun()">Perguntar</button>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <button class="btn sm" id="askReindexBtn" onclick="askReindex()">↻ Reindexar</button>
+    <button class="btn sm" onclick="askSuggest()" title="descobre relações do grafo por proximidade semântica">💡 Sugerir relações</button>
     <span id="askStatus" style="font-size:11.5px"></span>
   </div>
   <div id="askResults"></div>

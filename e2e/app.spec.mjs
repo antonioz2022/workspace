@@ -648,6 +648,55 @@ test("busca semântica: indexa a brain e ranqueia por significado (embedder fake
   expect(n, "índice salvo no IndexedDB").toBeGreaterThan(0);
 });
 
+test("descoberta: sugere relações por proximidade, excluindo já-ligadas e pai-filho (fake embedder)", async ({ page }) => {
+  await page.evaluate(() => {
+    const vocab = ["reserva", "hotel", "whatsapp", "shorts", "video", "minecraft", "mod"];
+    window.setEmbedder(async (texts) => texts.map(t => { const low = t.toLowerCase(); const v = vocab.map(w => low.split(w).length - 1); const n = Math.hypot(...v) || 1; return v.map(x => x / n); }));
+    DB.companies = [
+      { id: "co1", name: "Empresa A", emoji: "🅰", x: -300, y: 0, projects: [{ id: "pjHotelA", name: "Hotel A", emoji: "🏨", x: -300, y: 200, apps: [], todos: [], chats: [], context: "reserva de hotel por whatsapp" }] },
+      { id: "co2", name: "Empresa B", emoji: "🅱", x: 300, y: 0, projects: [
+        { id: "pjHotelB", name: "Hotel B", emoji: "🏨", x: 300, y: 200, apps: [], todos: [], chats: [], context: "sistema de reserva de hotel e whatsapp para hospedes" },
+        { id: "pjVideo", name: "Video", emoji: "🎬", x: 300, y: 400, apps: [], todos: [], chats: [], context: "publica shorts e video do mod de minecraft" },
+      ] },
+    ];
+    DB.links = []; save();
+  });
+  await page.evaluate(() => buildSemIndex());
+  const key = (a, b) => [a, b].sort().join("|");
+  const sug = await page.evaluate(async () => (await suggestLinks(10)).pairs.map(p => [p.a, p.b].sort().join("|")));
+  expect(sug, "Hotel A ↔ Hotel B (semanticamente próximos, não ligados)").toContain(key("pjHotelA", "pjHotelB"));
+  expect(sug.some(k => k.includes("co1") && k.includes("pjHotelA")), "pai-filho nunca sugerido").toBe(false);
+  // depois de ligar, não sugere mais aquele par
+  await page.evaluate(() => { DB.links = [{ id: "l1", from: "pjHotelA", to: "pjHotelB", type: "relacionado", note: "" }]; save(); });
+  const sug2 = await page.evaluate(async () => (await suggestLinks(10)).pairs.map(p => [p.a, p.b].sort().join("|")));
+  expect(sug2, "par já ligado sai das sugestões").not.toContain(key("pjHotelA", "pjHotelB"));
+});
+
+test("índice semântico portátil: publica no repo e um aparelho novo puxa sem reconstruir", async ({ page }) => {
+  let stored = null;
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url(), method = route.request().method();
+    if (url.includes("/contents/") && url.includes("semindex.json")) {
+      if (method === "PUT") { stored = JSON.parse(Buffer.from(JSON.parse(route.request().postData()).content, "base64").toString("utf8")); return route.fulfill({ status: 201, json: { content: { sha: "x" } } }); }
+      if (stored) return route.fulfill({ json: { sha: "x", content: Buffer.from(JSON.stringify(stored)).toString("base64") } });
+      return route.fulfill({ status: 404, json: {} });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.evaluate(() => {
+    window.setEmbedder(async (t) => t.map(() => [1, 0, 0]));
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    DB.companies = [{ id: "co1", name: "A", emoji: "🅰", x: 0, y: 0, projects: [{ id: "p1", name: "P", emoji: "🚀", x: 0, y: 100, apps: [], todos: [], chats: [], context: "conteudo de teste da brain" }] }];
+    save();
+  });
+  await page.evaluate(async () => { await buildSemIndex(); await publishSemIndex(); });
+  expect(stored, "índice publicado no repo (PUT capturado)").not.toBeNull();
+  expect(stored.items.length).toBeGreaterThan(0);
+  // aparelho novo: zera cache local + memória → loadSemIndex puxa do repo
+  const pulled = await page.evaluate(async () => { semIndex = null; await idbSet("cortex-semindex", null); const idx = await loadSemIndex(); return idx ? idx.items.length : 0; });
+  expect(pulled, "aparelho novo carregou o índice do repo").toBeGreaterThan(0);
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);
