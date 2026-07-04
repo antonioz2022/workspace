@@ -1,0 +1,149 @@
+/* ===== Fase 2b-2: sync de estado multi-device (state.json em repo PRIVADO) =====
+   O PAT vira o "login": colar o token + repo de estado num aparelho novo puxa tudo.
+   SEGURANÇA: token e apiKeys NUNCA sobem — são removidos antes do upload e
+   preservados localmente no pull. Estratégia: last-write-wins por updatedAt. */
+const STATE_PATH="state.json";
+let statePushTimer=null, stateApplying=false, statePushing=false;
+function b64e(str){
+  const b=new TextEncoder().encode(str); let bin="";
+  for(let i=0;i<b.length;i+=0x8000) bin+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
+  return btoa(bin);
+}
+function b64d(b64){
+  const bin=atob((b64||"").replace(/\s/g,"")); const b=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(b);
+}
+function stateRepo(){ const r=((DB.settings||{}).stateRepo||"").trim(); return /^[^/\s]+\/[^/\s]+$/.test(r)?r:null; }
+function stateSyncOn(){ return !!(stateRepo() && (DB.settings||{}).githubToken); }
+function sanitizeStateForSync(){
+  const clone=JSON.parse(JSON.stringify(DB));
+  if(clone.settings){
+    // segredos e config de máquina NÃO vão pro repo: o token, e os PROVIDERS inteiros
+    // (baseUrl/mcpUrl poderiam ser trocados por um Editor malicioso e vazar a chave local
+    // pra outro domínio), além do histórico do dock. Ficam só neste navegador.
+    delete clone.settings.githubToken;
+    delete clone.settings.providers;
+    delete clone.settings.mcpUrl;
+    delete clone.settings.dock;
+  }
+  return clone;
+}
+function stateBadge(txt, ok){
+  const el=document.getElementById("stateSyncStatus");
+  if(el){ el.textContent=txt; el.style.color = ok===false ? "var(--warn)" : "var(--tx3)"; }
+}
+async function ghGetFile(repo,path){
+  const j=await ghGet(`/repos/${repo}/contents/${encodeURIComponent(path)}`);
+  if(!j||Array.isArray(j)) return null;
+  return {sha:j.sha, text:b64d(j.content||"")};
+}
+async function ghPutFile(repo,path,text,sha,msg){
+  const tok=(DB.settings||{}).githubToken;
+  const body={message:msg, content:b64e(text)}; if(sha) body.sha=sha;
+  const r=await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`,{
+    method:"PUT",
+    headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
+    body:JSON.stringify(body)});
+  if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
+    throw new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
+  return r.json();
+}
+let lastPushedDbStr=null;
+async function pushState(){
+  if(!stateSyncOn() || stateApplying || statePushing) return;
+  const dbClean=sanitizeStateForSync(), dbStr=JSON.stringify(dbClean);
+  // conteúdo idêntico ao último push → NÃO empurra (evita que pan/zoom ou re-render
+  // carimbem updatedAt novo e sobrescrevam edições reais de outro aparelho)
+  if(dbStr===lastPushedDbStr) return;
+  statePushing=true; stateBadge("☁ enviando…");
+  const who=localStorage.getItem(LS_KEY+"-ghlogin")||navigator.userAgent.slice(0,40);
+  let lastErr=null;
+  try{
+    for(let tent=1; tent<=2; tent++){
+      try{
+        const payload={updatedAt:Date.now(), device:who, db:dbClean};
+        const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null); // re-lê o sha a cada tentativa
+        await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
+        lastPushedDbStr=dbStr;
+        localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
+        const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+        statePushing=false; return;
+      }catch(e){ lastErr=e; }
+    }
+    // 2 tentativas falharam (provável conflito: outra pessoa sincronizou no meio) →
+    // NÃO sobrescreve às cegas: puxa a versão nova e avisa.
+    statePushing=false;
+    const pulled=await pullState({force:true}).catch(()=>false);
+    stateBadge(pulled
+      ? "☁ conflito: alguém sincronizou antes. Puxei a versão nova (revise e edite de novo se precisar)"
+      : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
+  }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); statePushing=false; }
+  statePushing=false;
+}
+function scheduleStatePush(){
+  if(!stateSyncOn() || stateApplying) return;
+  clearTimeout(statePushTimer); statePushTimer=setTimeout(pushState, 4000);
+}
+/* resumo legível do que o estado REMOTO muda em relação ao local (pro preview antes do pull) */
+function diffState(remoteDb){
+  const curP={}, remP={}, lines=[];
+  DB.companies.forEach(c=>c.projects.forEach(p=>curP[p.id]={p,co:c.name}));
+  (remoteDb.companies||[]).forEach(c=>c.projects.forEach(p=>remP[p.id]={p,co:c.name}));
+  const curCo=new Set(DB.companies.map(c=>c.id)), remCo=new Set((remoteDb.companies||[]).map(c=>c.id));
+  (remoteDb.companies||[]).forEach(c=>{ if(!curCo.has(c.id)) lines.push(`➕ empresa "${c.name}"`); });
+  DB.companies.forEach(c=>{ if(!remCo.has(c.id)) lines.push(`➖ empresa "${c.name}" (some)`); });
+  Object.keys(remP).forEach(id=>{ if(!curP[id]) lines.push(`➕ projeto "${remP[id].p.name}"`); });
+  Object.keys(curP).forEach(id=>{ if(!remP[id]) lines.push(`➖ projeto "${curP[id].p.name}" (some)`); });
+  Object.keys(remP).forEach(id=>{ if(!curP[id]) return;
+    const a=curP[id].p, b=remP[id].p, ch=[];
+    if((a.todos||[]).length!==(b.todos||[]).length) ch.push(`pendências ${(a.todos||[]).length}→${(b.todos||[]).length}`);
+    if((a.context||"")!==(b.context||"")) ch.push("memória mudou");
+    if((a.desc||"")!==(b.desc||"")) ch.push("descrição");
+    if((a.apps||[]).length!==(b.apps||[]).length) ch.push(`serviços ${(a.apps||[]).length}→${(b.apps||[]).length}`);
+    if(ch.length) lines.push(`✏ "${b.name}": ${ch.join(", ")}`);
+  });
+  return lines;
+}
+async function pullState({force=false}={}){
+  if(!stateSyncOn() || statePushing) return false;
+  const f=await ghGetFile(stateRepo(),STATE_PATH).catch(e=>{ stateBadge("☁ falha ao ler: "+(e.message||e), false); return null; });
+  if(!f){ return false; }
+  let payload; try{ payload=JSON.parse(f.text); }catch(e){ stateBadge("☁ state.json inválido", false); return false; }
+  if(!payload || !payload.db || !Array.isArray(payload.db.companies)) return false;
+  const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
+  if(!force && !(payload.updatedAt>last)) return false;
+  // PREVIEW/DIFF: remoto mais novo E há edições locais não sincronizadas → mostra o que muda e confirma
+  if(!force && lastPushedDbStr!==null && JSON.stringify(sanitizeStateForSync())!==lastPushedDbStr){
+    const lines=diffState(payload.db);
+    const resumo = lines.length ? lines.slice(0,12).map(l=>"• "+l).join("\n")+(lines.length>12?`\n• +${lines.length-12} mudança(s)…`:"") : "(mudanças pequenas)";
+    const go = await uiConfirm(
+      `O remoto está mais novo (por ${String(payload.device||"?").slice(0,24)}) e você tem edições locais não sincronizadas.\n\nPuxar SUBSTITUI o local por:\n\n${resumo}\n\nPuxar mesmo assim? (edições locais não enviadas se perdem)`,
+      {danger:true, okLabel:"Puxar e substituir"});
+    if(!go){ stateBadge("☁ pull adiado — você tem edições locais (elas sobem sozinhas ao editar/salvar)", false); return false; }
+  }
+  stateApplying=true;
+  try{
+    // preserva TUDO que é local (não vem do repo): token, repo, providers (com as chaves),
+    // mcpUrl e dock. Assim ninguém troca a baseUrl no estado remoto pra roubar a chave.
+    const local=(DB.settings||{});
+    const keepTok=local.githubToken, keepRepo=local.stateRepo,
+          keepProviders=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
+    DB=migrate(payload.db);
+    DB.settings=DB.settings||{};
+    if(keepTok) DB.settings.githubToken=keepTok;
+    if(keepRepo) DB.settings.stateRepo=keepRepo;
+    if(keepProviders!==undefined) DB.settings.providers=keepProviders;
+    if(keepMcp!==undefined) DB.settings.mcpUrl=keepMcp;
+    if(keepDock!==undefined) DB.settings.dock=keepDock;
+    save();
+    lastPushedDbStr=JSON.stringify(sanitizeStateForSync());   // acabou de aplicar o remoto → não re-empurra idêntico
+    localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
+    render();
+    const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+  }finally{ stateApplying=false; }
+  return true;
+}
+function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
+  stateBadge(stateSyncOn()?"☁ sync ligada: salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
+

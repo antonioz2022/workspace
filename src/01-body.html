@@ -1,0 +1,352 @@
+<body>
+
+<div class="aurora"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+<div id="gridDots"></div>
+
+<div id="viewport">
+  <div id="world">
+    <svg id="edges"></svg>
+    <div id="nodes"></div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div class="hud">
+  <div class="cube" style="background:transparent;box-shadow:none;padding:0;overflow:visible;filter:drop-shadow(0 0 10px rgba(139,92,246,.5))">
+    <svg viewBox="0 0 120 120" width="30" height="30" aria-label="Córtex">
+      <g fill="none" stroke="#8B5CF6" stroke-width="6"><path d="M34 29 60 60M20 60 60 60M34 91 60 60M77 96 60 60"/></g>
+      <path d="M77 24 60 60" fill="none" stroke="#F5A524" stroke-width="6"/>
+      <g fill="#8B5CF6"><circle cx="34" cy="29" r="8"/><circle cx="20" cy="60" r="8"/><circle cx="34" cy="91" r="8"/><circle cx="77" cy="96" r="8"/></g>
+      <circle cx="77" cy="24" r="8.5" fill="#F5A524"/>
+      <circle cx="60" cy="60" r="12" fill="#B69CFF"/>
+    </svg>
+  </div>
+  <div><h1>Córtex</h1><small>centro de comando</small></div>
+  <div class="sep"></div>
+  <div class="m"><b id="hudCos">0</b><span>empresas</span></div>
+  <div class="m"><b id="hudPjs">0</b><span>projetos</span></div>
+  <div class="m"><b id="hudCost">$0</b><span>/mês</span></div>
+  <div class="m"><b id="hudPend">0</b><span>pendências</span></div>
+</div>
+
+<div class="topright">
+  <button class="btn" id="wsPill" onclick="openWsModal()" title="Trocar de workspace">🗂 Workspace</button>
+  <button class="btn" onclick="openSearch()" title="Buscar em tudo (Ctrl+K)">🔎 Buscar</button>
+  <button class="btn" id="brainBtn" onclick="connectBrainClick()">🧠 Conectar cérebro</button>
+  <button class="btn" onclick="openCockpit()">🎛 Cockpit</button>
+  <button class="btn" id="contasBtn" onclick="openAiModal()">⚙ Contas</button>
+  <button class="btn" onclick="exportData()">⬇ Backup</button>
+  <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Restaurar</button>
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+  <button class="btn primary" onclick="openCoModal()">＋ Nova empresa</button>
+</div>
+
+<div class="zoomctl">
+  <button onclick="zoomBy(-.18)">−</button>
+  <span class="pct" id="zoomPct">100%</span>
+  <button onclick="zoomBy(.18)">＋</button>
+  <button onclick="fitView()" title="centralizar">⌂</button>
+</div>
+<div class="mapfilter" id="mapFilter"></div>
+<div class="helper">arraste o fundo pra navegar · scroll pra zoom · clique nos nós pra expandir · arraste um nó pra reposicionar</div>
+
+<!-- DRAWER -->
+<div class="drawer" id="drawer">
+  <div id="drawerStd" style="display:contents">
+    <div class="dr-head">
+      <div class="dr-emoji" id="drEmoji">🏢</div>
+      <div><div class="k" id="drKind">empresa</div><h3 id="drTitle">—</h3></div>
+      <button class="dr-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="dr-body" id="drBody"></div>
+    <div class="dr-foot" id="drFoot"></div>
+  </div>
+  <div id="drawerChat" style="display:none; flex-direction:column; height:100%">
+    <div class="chat-head">
+      <button class="back" onclick="backFromChat()" title="voltar">←</button>
+      <h3 id="chTitle">chat</h3>
+      <select id="chProv" onchange="chatProvChanged()" title="conta de IA"></select>
+      <select id="chModel" onchange="chatModelChanged()" title="modelo"></select>
+      <button class="dr-close" onclick="closeDrawer()">✕</button>
+    </div>
+    <div class="chat-msgs" id="chMsgs"></div>
+    <div class="ctxbar" id="chCtx"></div>
+    <div class="composer">
+      <textarea id="chInput" rows="1" placeholder="mensagem… (Enter envia · Shift+Enter quebra linha)" onkeydown="chKey(event)"></textarea>
+      <button class="send" id="chSend" onclick="sendChat()">➤</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAIS -->
+<div class="overlay" id="coModal"><div class="modal">
+  <h3 id="coModalTitle">Nova empresa</h3>
+  <div class="f-row">
+    <div class="f" style="flex:0 0 86px"><label>Emoji</label><input id="coEmoji" placeholder="🏢" maxlength="4"></div>
+    <div class="f"><label>Nome</label><input id="coName"></div>
+  </div>
+  <div class="f"><label>Descrição curta</label><input id="coDesc"></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🧬 Perfil pra IA <span style="font-weight:400;color:var(--tx3)">(opcional, alimenta a brain)</span></div>
+  <div class="f-row">
+    <div class="f"><label>Tom de voz</label><input id="coTone" placeholder="ex.: épico, gamer"></div>
+    <div class="f"><label>Público-alvo</label><input id="coAudience" placeholder="ex.: fãs de DBZ"></div>
+  </div>
+  <div class="f"><label>Proposta / essência</label><input id="coValue" placeholder="o que é, em 1 frase"></div>
+  <div class="f"><label>Do's &amp; Don'ts</label><textarea id="coRules" rows="2" placeholder="sempre… / nunca…"></textarea></div>
+  <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyProfilePrompt('co')">✨ Sugerir com IA (copia prompt)</button></div>
+  <div class="f"><label>Cor</label><input id="coColor" type="color" value="#8B5CF6" style="height:44px;padding:5px"></div>
+  <div class="f"><label>Logo (imagem opcional, substitui o emoji no mapa)</label>
+    <input type="file" id="coImgFile" accept="image/*" onchange="pickLogo(event,'co')">
+    <div id="coImgPrev" style="margin-top:8px"></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveCo()">Salvar</button></div>
+</div></div>
+
+<div class="overlay" id="pjModal"><div class="modal">
+  <h3 id="pjModalTitle">Novo projeto</h3>
+  <div class="f-row">
+    <div class="f" style="flex:0 0 86px"><label>Emoji</label><input id="pjEmoji" placeholder="🚀" maxlength="4"></div>
+    <div class="f"><label>Nome</label><input id="pjName"></div>
+  </div>
+  <div class="f"><label>Descrição</label><input id="pjDesc"></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🧬 Perfil pra IA <span style="font-weight:400;color:var(--tx3)">(opcional)</span></div>
+  <div class="f-row">
+    <div class="f"><label>Tom de voz</label><input id="pjTone"></div>
+    <div class="f"><label>Público-alvo</label><input id="pjAudience"></div>
+  </div>
+  <div class="f"><label>Proposta / essência</label><input id="pjValue"></div>
+  <div class="f"><label>Do's &amp; Don'ts</label><textarea id="pjRules" rows="2"></textarea></div>
+  <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyProfilePrompt('pj')">✨ Sugerir com IA (copia prompt)</button></div>
+  <div class="f"><label>Status</label>
+    <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
+  </div>
+  <div class="f"><label>🔗 Repositório GitHub</label>
+    <input id="pjGithub" list="ghRepoList" placeholder="owner/repo — ex.: antonioz2022/DragonblockGP" oninput="pjRepoValidate()" onchange="pjRepoValidate()"><datalist id="ghRepoList"></datalist>
+    <div id="pjRepoStatus" style="font-size:11.5px;color:var(--tx3);margin-top:5px;min-height:15px"></div>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:12.5px;color:var(--tx2);cursor:pointer">
+      <input type="checkbox" id="pjNoRepo" onchange="pjNoRepoToggle(true)" style="width:auto;margin:0"> Este projeto não tem repositório
+    </label></div>
+  <div class="f"><label>Pasta local no PC (opcional, entra no INDEX da brain p/ IAs)</label><input id="pjLocal" placeholder="ex.: C:\Users\anton\Desktop\Mine M\DBGP\DragonblockGP"></div>
+  <div class="f"><label>Logo (imagem opcional, substitui o emoji no mapa)</label>
+    <input type="file" id="pjImgFile" accept="image/*" onchange="pickLogo(event,'pj')">
+    <div id="pjImgPrev" style="margin-top:8px"></div>
+  </div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="savePj()">Salvar</button></div>
+</div></div>
+
+<div class="overlay" id="aiModal"><div class="modal" style="width:min(640px,94vw)">
+  <h3>⚙ Conta & Workspace</h3>
+  <div id="accHeader" style="margin-top:10px"></div>
+  <div class="acc-tabs">
+    <button class="acc-tab on" data-tab="conta" onclick="switchAccTab('conta')">Conta</button>
+    <button class="acc-tab" data-tab="membros" onclick="switchAccTab('membros')">👥 Membros</button>
+    <button class="acc-tab" data-tab="ias" onclick="switchAccTab('ias')">🤖 IAs</button>
+    <button class="acc-tab" data-tab="chat" onclick="switchAccTab('chat')">💬 Chat</button>
+    <button class="acc-tab" data-tab="vigia" onclick="switchAccTab('vigia')">🛰 Vigia</button>
+    <button class="acc-tab" data-tab="avancado" onclick="switchAccTab('avancado')">Avançado</button>
+  </div>
+
+  <div class="tabpane on" id="tab-conta">
+    <div id="ghLoginCard" style="display:none; margin-bottom:10px; padding:12px; border:1px solid var(--line2); border-radius:12px; background:var(--glass2)"></div>
+    <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin:0 0 12px"></div>
+    <div class="dr-sec" style="margin:4px 0 8px">☁ Sua workspace</div>
+    <div id="wsState"></div>
+  </div>
+
+  <div class="tabpane" id="tab-avancado">
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px"><b>Token manual do GitHub</b> (alternativa ao login; ex.: fine-grained com <b>Contents: read/write</b>, ou classic <code>repo</code>):</p>
+    <input id="ghTokenInput" type="password" placeholder="github_pat_… ou ghp_…" oninput="setGithubToken(this.value)" style="width:100%">
+  </div>
+
+  <div class="tabpane" id="tab-chat">
+    <h3 style="font-size:15px; margin:0 0 3px">💬 Conversar aqui dentro</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 12px">
+      Cole a chave de qualquer modelo (grátis, barato ou local) e converse com ele em qualquer projeto, no botão 💬 do card. A IA já começa sabendo da memória daquele projeto.
+      <span style="color:var(--tx3)"> A chave fica <b>só neste navegador</b>. É o contrário da aba 🤖 IAs, que leva o Córtex pra sua IA.</span>
+    </p>
+    <div id="presetGrid"></div>
+    <div id="provList" style="margin-top:14px"></div>
+    <div style="margin:10px 0 4px">
+      <button class="btn sm" onclick="openProvForm()">＋ Conta manual (qualquer OpenAI-compatível)</button>
+    </div>
+    <div id="provForm" style="display:none; border-top:1px solid var(--line); padding-top:14px; margin-top:10px">
+      <div class="f-row">
+        <div class="f"><label>Nome da conta</label><input id="pvName"></div>
+        <div class="f" style="flex:0 0 170px"><label>Tipo</label>
+          <select id="pvKind" onchange="pvKindChanged()">
+            <option value="openai">OpenAI-compatível</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+          </select>
+        </div>
+      </div>
+      <div class="f" id="pvBaseWrap"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
+      <div class="f"><label>API Key <span style="color:var(--tx3)">(deixe qualquer coisa p/ Ollama/local)</span></label><input id="pvKey" type="password" placeholder="cole a chave"></div>
+      <div class="f"><label>Modelos (separe por vírgula; o 1º é o padrão)</label><input id="pvModels"></div>
+      <div class="modal-foot" style="margin-top:6px">
+        <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
+        <button class="btn primary" onclick="saveProv()">Salvar conta</button>
+      </div>
+    </div>
+    <p style="color:var(--tx3); font-size:11px; margin-top:14px">ⓘ O chat roda direto do navegador. Funciona com provedores CORS-friendly (Groq · Gemini · OpenRouter · DeepSeek · Anthropic · Ollama local). <b>OpenAI (api.openai.com) bloqueia chamada de navegador.</b> Se der erro de CORS, use um dos grátis/locais.</p>
+  </div>
+
+  <div class="tabpane" id="tab-ias">
+    <h3 style="font-size:15px; margin:0 0 3px">🤖 Conectar uma IA ao cérebro</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 12px">
+      Clique e o Córtex abre a página certa, com a URL já copiada. Depois é só <b>colar</b> e <b>autorizar</b> com o seu GitHub.
+    </p>
+    <div id="aiDir"></div>
+    <div style="display:flex; gap:8px; align-items:center; margin:14px 0 4px">
+      <input id="mcpUrlInput" placeholder="https://workspace-mcp.antonioz2022.workers.dev" oninput="setMcpUrl(this.value)" style="flex:1">
+      <button class="btn sm" id="mcpCopyBtn" onclick="copyMcpUrl()">📋 Copiar URL</button>
+    </div>
+    <p style="color:var(--tx3); font-size:11px; margin:0 0 16px">
+      ⓘ O Claude e o ChatGPT não deixam um site autorizar por você (é questão de segurança). O <b>Authorize</b> é sempre lá dentro deles; o botão só deixa tudo pronto pra colar.
+    </p>
+    <div class="dr-sec" style="margin-top:6px">IAs conectadas <span style="cursor:pointer;color:var(--tx3)" onclick="renderMcpConnections()">🔄</span></div>
+    <div id="mcpConnList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
+  </div>
+  <div class="tabpane" id="tab-vigia">
+    <h3 style="font-size:15px; margin:0 0 4px">🛰 Vigia 24/7</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
+      De 5 em 5 minutos o Córtex checa os seus serviços. Se algum cair, você recebe um <b>aviso no celular</b> na hora (e outro quando voltar).
+      Baixe o app <b>ntfy</b> (Android/iOS), assine o tópico abaixo e pronto.
+    </p>
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+      <input id="wdTopicInput" placeholder="tópico secreto do ntfy" oninput="setWdTopic(this.value)" style="flex:1">
+      <button class="btn sm" onclick="genWdTopic()">🎲 Gerar tópico</button>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <button class="btn sm primary" id="wdSendBtn" onclick="sendWatchdog()">📡 Ativar/atualizar vigia</button>
+      <button class="btn sm" id="wdTestBtn" onclick="testWatchdog()">🔔 Testar push</button>
+    </div>
+    <div id="wdStatus" style="font-size:12px; color:var(--tx3); margin-top:8px">—</div>
+  </div>
+  <div class="tabpane" id="tab-membros">
+    <h3 style="font-size:15px; margin:0 0 4px">👥 Membros da workspace</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
+      A sua workspace é um repositório privado, e cada membro é um colaborador dele. O <b>Editor</b> edita o mapa e o cérebro,
+      o <b>Leitor</b> só visualiza, o <b>Admin</b> gerencia. As IAs de cada pessoa entram no cérebro automaticamente.
+    </p>
+    <div id="memberSelf" style="font-size:12px; color:var(--tx3); margin-bottom:8px">—</div>
+    <div style="display:flex; gap:8px; margin-bottom:8px">
+      <input id="memberUser" placeholder="usuário do GitHub (ex.: fulano)" style="flex:1">
+      <select id="memberRole" style="width:110px">
+        <option value="push">Editor</option>
+        <option value="pull">Leitor</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button class="btn sm primary" onclick="inviteMember()">Convidar</button>
+    </div>
+    <div id="membersList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
+    <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap">
+      <button class="btn sm" onclick="copyInviteText(this)">📋 Copiar convite (passos pro novo membro)</button>
+      <button class="btn sm" onclick="renderMembers()">🔄</button>
+    </div>
+    <p style="color:var(--tx3); font-size:11.5px; margin-top:10px">
+      🏢 <b>Enterprise:</b> crie uma Organization no GitHub e transfira o repo da brain para ter times, SSO e permissões finas.
+      O Córtex funciona igual (só muda o owner/repo). Bônus: na org, membros podem usar token fine-grained.
+    </p>
+  </div>
+  <div class="modal-foot">
+    <button class="btn" onclick="closeModals()">Fechar</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="wsModal"><div class="modal" style="width:min(560px,94vw)">
+  <h3>🗂 Workspaces</h3>
+  <p style="color:var(--tx2); font-size:12px; margin:-8px 0 14px">
+    Cada workspace é um repositório privado no seu GitHub, com as empresas, projetos e o cérebro dela. Escolha em qual trabalhar. Ao trocar, sua conta do GitHub e as chaves de IA continuam as mesmas.
+  </p>
+  <div id="wsList" style="display:flex; flex-direction:column; gap:8px"></div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:14px">
+    <button class="btn sm primary" onclick="wsCreateNew()">🚀 Criar nova</button>
+    <button class="btn sm" onclick="wsConnectByName()">＋ Conectar (owner/repo)</button>
+    <button class="btn sm" onclick="wsScanGithub()">🔍 Procurar no meu GitHub</button>
+  </div>
+  <div id="wsScanStatus" style="font-size:11.5px; color:var(--tx3); margin-top:10px"></div>
+  <div class="modal-foot">
+    <button class="btn" onclick="closeModals()">Fechar</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="searchModal"><div class="modal" style="width:min(600px,94vw)">
+  <h3>🔎 Buscar</h3>
+  <input id="searchInput" placeholder="empresa, projeto, pendência, serviço, memória…" oninput="runSearch()"
+    onkeydown="if(event.key==='Enter'){const r=document.querySelector('#searchResults .mini-item'); if(r) r.click();}"
+    style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:11px 14px; font-size:14px; font-family:inherit; margin-top:6px">
+  <div id="searchResults" class="mini-list" style="margin-top:12px; max-height:52vh; overflow:auto"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
+</div></div>
+
+<div class="overlay" id="histModal"><div class="modal" style="width:min(560px,94vw)">
+  <h3>🕘 Histórico da workspace</h3>
+  <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">Cada sincronização vira uma versão (é o histórico git do <code>state.json</code>). Clique numa pra voltar a workspace pra aquele ponto. O atual vira o topo, então dá pra voltar de novo.</p>
+  <div id="histBody" class="mini-list" style="max-height:56vh; overflow:auto"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
+</div></div>
+
+<div class="overlay" id="prModal"><div class="modal" style="width:min(560px,94vw)">
+  <h3>🔀 Novo pull request</h3>
+  <div id="prRepoLine" style="font-size:12px; color:var(--tx3); margin:-6px 0 10px"></div>
+  <div class="f-row">
+    <div class="f"><label>De (head)</label><select id="prHead"></select></div>
+    <div class="f"><label>Para (base)</label><select id="prBase"></select></div>
+  </div>
+  <div class="f"><label>Título</label><input id="prTitle" placeholder="o que este PR faz"></div>
+  <div class="f"><label>Descrição (opcional)</label><textarea id="prBody" rows="3" placeholder="contexto, mudanças…"></textarea></div>
+  <div id="prStatus" style="font-size:11.5px; color:var(--tx3); min-height:15px"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="createRepoPR()">Criar PR</button></div>
+</div></div>
+
+<div class="overlay" id="cockpitModal"><div class="modal" style="width:min(780px,94vw)">
+  <h3>🎛 Cockpit de desenvolvimento</h3>
+  <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">
+    Todos os projetos num relance, ordenados por quem precisa de atenção.
+  </p>
+  <div id="cockpitBody"></div>
+  <div class="modal-foot" style="justify-content:space-between">
+    <button class="btn sm" onclick="cockpitRefreshAll()">🔄 Atualizar tudo</button>
+    <button class="btn" onclick="closeModals()">Fechar</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="appModal"><div class="modal">
+  <h3 id="appModalTitle">Novo serviço</h3>
+  <div class="f"><label>Nome</label><input id="apName"></div>
+  <div class="f"><label>Função</label><input id="apRole"></div>
+  <div class="f-row">
+    <div class="f"><label>Plano</label><input id="apPlan"></div>
+    <div class="f" style="flex:0 0 140px"><label>Custo/mês (US$)</label><input id="apCost" type="number" step="0.01" value="0"></div>
+  </div>
+  <div class="f"><label>Link do painel</label><input id="apDash"></div>
+  <div class="f"><label>Link do serviço</label><input id="apUrl"></div>
+  <div class="f"><label>Health check (pinga e mostra status)</label><input id="apHealth"></div>
+  <div class="f"><label>Notas</label><textarea id="apNotes"></textarea></div>
+  <div class="f"><label>Alerta</label><input id="apAlert"></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🔧 Como a IA opera <span style="font-weight:400;color:var(--tx3)">(runbook: a IA age com as chaves do SEU ambiente)</span></div>
+  <div class="f"><label>Tipo</label>
+    <select id="apKind"><option value="">—</option><option value="github">GitHub (repo)</option><option value="render">Render (deploy)</option><option value="api">API / serviço HTTP</option><option value="crm">CRM / SaaS</option><option value="db">Banco de dados</option><option value="outro">Outro</option></select>
+  </div>
+  <div class="f"><label>Runbook: como agir (deploy, logs, testar; e onde estão as chaves NO AMBIENTE, sem os valores)</label><textarea id="apOps" rows="3" placeholder="ex.: deploy = push na main (⚠ produção). Logs no dashboard. Chaves: env vars no Render / git configurado local."></textarea></div>
+  <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyRunbookPrompt()">✨ Sugerir runbook (p/ IA)</button></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveApp()">Salvar</button></div>
+</div></div>
+
+<!-- 💬 chat dock (copiloto lateral) -->
+<div id="dock">
+  <div class="chat-head">
+    <span style="font-size:16px">💬</span>
+    <h3 style="flex:1">Córtex</h3>
+    <select id="dockModel" onchange="dockModelChanged()" title="modelo"></select>
+    <button class="back" onclick="dockToggleMin()" title="minimizar">─</button>
+  </div>
+  <div class="chat-msgs" id="dockBody"></div>
+  <div class="composer" id="dockComposer">
+    <textarea id="dockInput" rows="1" placeholder="pergunte algo…" onkeydown="dockKey(event)"></textarea>
+    <button class="send" id="dockSendBtn" onclick="dockSend()">➤</button>
+  </div>
+</div>
+<button id="dockFab" onclick="dockToggleMin()" title="abrir chat">💬</button>
+
+<script>

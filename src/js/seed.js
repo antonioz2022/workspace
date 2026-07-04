@@ -1,0 +1,1 @@
+const SEED = { version: 5, companies: [] }
