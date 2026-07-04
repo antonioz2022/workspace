@@ -98,6 +98,7 @@ function openDrawer(f){
 
   if(f.type==="ap"){
     const a=f.ap, ic=iconFor(a.name);
+    const dashU=safeUrl(a.dash), urlU=safeUrl(a.url);   // só http(s); esquema perigoso vira "" (some o link)
     kind.textContent="serviço · "+f.pj.name; title.textContent=a.name;
     em.innerHTML=`<span style="font-size:16px; font-weight:800; color:#fff; background:linear-gradient(135deg,${ic.bg},${ic.bg}cc); width:100%; height:100%; border-radius:15px; display:grid; place-items:center">${esc(ic.txt)}</span>`;
     const pc=pingCache[a.id];
@@ -111,10 +112,10 @@ function openDrawer(f){
       </div>
       ${a.alert?`<div class="chips" style="margin-top:8px"><span class="chip alert">⚠ ${esc(a.alert)}</span></div>`:""}
       ${a.notes?`<div class="dr-sec">Notas</div><div class="notes">${esc(a.notes)}</div>`:""}
-      ${(a.dash||a.url)?`<div class="dr-sec">Acessos</div>
+      ${(dashU||urlU)?`<div class="dr-sec">Acessos</div>
         <div style="display:flex; gap:9px; flex-wrap:wrap">
-          ${a.dash?`<a class="link" href="${esc(a.dash)}" target="_blank">Abrir painel ↗</a>`:""}
-          ${a.url?`<a class="link" href="${esc(a.url)}" target="_blank">Abrir serviço ↗</a>`:""}
+          ${dashU?`<a class="link" href="${esc(dashU)}" target="_blank" rel="noopener noreferrer">Abrir painel ↗</a>`:""}
+          ${urlU?`<a class="link" href="${esc(urlU)}" target="_blank" rel="noopener noreferrer">Abrir serviço ↗</a>`:""}
         </div>`:""}`;
     foot.innerHTML=`
       <button class="btn" onclick="openAppModalFor('${f.pj.id}','${a.id}')">✎ Editar</button>
@@ -149,10 +150,12 @@ async function ping(a){
     const dp=document.getElementById("drping"); if(dp && sel && sel.id===a.id) dp.textContent=txt;
   };
   if(pingCache[a.id] && pingCache[a.id].fresh) return upd(pingCache[a.id].cls, pingCache[a.id].txt);
+  const target=safeUrl(a.health);   // só http(s): impede fetch em javascript:/data:/file: vindos de estado não confiável
+  if(!target){ upd("bad","URL inválida"); if(pingCache[a.id]) pingCache[a.id].fresh=true; return; }
   const t0=performance.now();
   try{
     const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),65000);
-    const r=await fetch(a.health,{signal:ctl.signal}); clearTimeout(timer);
+    const r=await fetch(target,{signal:ctl.signal}); clearTimeout(timer);
     const ms=Math.round(performance.now()-t0);
     if(r.ok){ upd("ok","online · "+ms+"ms"); } else { upd("bad","HTTP "+r.status); }
   }catch(e){ upd("bad","offline"); }

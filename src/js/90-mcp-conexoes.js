@@ -91,7 +91,7 @@ async function renderMcpConnections(){
           <b>${esc(c.clientName||"Claude")}</b>
           <span style="color:var(--tx3);font-size:11px"> · conectado em ${mcpDate(c.registrationDate)} · ${c.grants.length} autorização(ões)${c.grants[0]&&c.grants[0].label?` · ${esc(c.grants[0].label)}`:""}</span>
         </span>
-        <span class="x" title="desconectar este Claude (revoga o acesso)" onclick="mcpDisconnect('${esc(c.clientId)}','${esc(c.clientName||"Claude")}')">✕</span>
+        <span class="x" title="desconectar este Claude (revoga o acesso)" onclick="mcpDisconnect('${jsq(c.clientId)}','${jsq(c.clientName||"Claude")}')">✕</span>
       </div>`).join("");
   }catch(e){ el.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; }
 }

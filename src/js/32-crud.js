@@ -21,7 +21,7 @@ function pickLogo(ev, kind){
 function showLogoPrev(kind, src){
   const el=document.getElementById(kind+"ImgPrev");
   el.innerHTML = src
-    ? `<img src="${src}" style="height:52px; border-radius:11px; vertical-align:middle; background:rgba(0,0,0,.3); padding:3px"> <button type="button" class="btn sm ghost" onclick="clearLogo('${kind}')">tirar logo</button>`
+    ? `<img src="${esc(src)}" style="height:52px; border-radius:11px; vertical-align:middle; background:rgba(0,0,0,.3); padding:3px"> <button type="button" class="btn sm ghost" onclick="clearLogo('${kind}')">tirar logo</button>`
     : `<span style="color:var(--tx3); font-size:12px">sem logo, usa o emoji</span>`;
 }
 function clearLogo(kind){

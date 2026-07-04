@@ -41,8 +41,19 @@ function importData(ev){
   const r=new FileReader();
   r.onload=()=>{ try{
     const d=JSON.parse(r.result);
-    if(!d.companies) throw new Error("formato inválido");
-    DB=d; expanded=new Set(); save(); render(); fitView();
+    if(!d || !Array.isArray(d.companies)) throw new Error("formato inválido");
+    // backup = conteúdo de MENOR confiança: normaliza+higieniza (migrate→hardenDB: IDs/img)
+    // e preserva os segredos LOCAIS deste navegador (um backup legítimo não os traz;
+    // um malicioso não pode injetar mcpUrl/providers/token e vazar a chave)
+    const local=(DB.settings||{}), keepTok=local.githubToken, keepRepo=local.stateRepo,
+          keepProv=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
+    DB=migrate(d); DB.settings=DB.settings||{};
+    scrubIncomingSettings(DB);
+    if(keepTok)DB.settings.githubToken=keepTok; if(keepRepo)DB.settings.stateRepo=keepRepo;
+    if(keepProv!==undefined)DB.settings.providers=keepProv;
+    if(keepMcp!==undefined)DB.settings.mcpUrl=keepMcp;
+    if(keepDock!==undefined)DB.settings.dock=keepDock;
+    expanded=new Set(); save(); render(); fitView();
   }catch(e){ alert("Arquivo inválido: "+e.message);} };
   r.readAsText(f); ev.target.value="";
 }

@@ -28,6 +28,7 @@ async function restoreSnapshot(sha){
     if(!payload||!payload.db||!Array.isArray(payload.db.companies)) throw new Error("versão inválida");
     const local=(DB.settings||{}), keep={tok:local.githubToken, repo:local.stateRepo, prov:local.providers, mcp:local.mcpUrl, dock:local.dock};
     DB=migrate(payload.db); DB.settings=DB.settings||{};
+    scrubIncomingSettings(DB);   // versão restaurada é conteúdo remoto: apaga local-only antes de restaurar a local
     if(keep.tok)DB.settings.githubToken=keep.tok; if(keep.repo)DB.settings.stateRepo=keep.repo;
     if(keep.prov!==undefined)DB.settings.providers=keep.prov; if(keep.mcp!==undefined)DB.settings.mcpUrl=keep.mcp; if(keep.dock!==undefined)DB.settings.dock=keep.dock;
     // reescreve a brain (memoria/pendencias/projeto) pra bater com a versão restaurada

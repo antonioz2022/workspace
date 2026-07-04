@@ -19,7 +19,7 @@ async function githubLogin(){
       <div style="font-size:12px;color:var(--tx3);margin-top:6px">Se não abriu: <a href="${esc(j.verification_uri)}" target="_blank" rel="noopener" style="color:var(--ac)">${esc(j.verification_uri)}</a> e digite</div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <code style="font-family:var(--mono);font-size:18px;letter-spacing:2px;background:var(--glass2);padding:6px 12px;border-radius:8px">${esc(j.user_code)}</code>
-        <button class="btn sm" onclick="copyText('${esc(j.user_code)}')">📋 copiar</button>
+        <button class="btn sm" onclick="copyText('${jsq(j.user_code)}')">📋 copiar</button>
       </div>
       <div id="ghLoginWait" style="font-size:12px;color:var(--tx3);margin-top:10px">⏳ aguardando você autorizar no GitHub…</div>`;
     pollDeviceToken(j.device_code, (j.interval||5), Date.now()+((j.expires_in||900)*1000));

@@ -131,6 +131,7 @@ async function pullState({force=false}={}){
           keepProviders=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
     DB=migrate(payload.db);
     DB.settings=DB.settings||{};
+    scrubIncomingSettings(DB);   // apaga qualquer local-only vindo do remoto ANTES de restaurar a local
     if(keepTok) DB.settings.githubToken=keepTok;
     if(keepRepo) DB.settings.stateRepo=keepRepo;
     if(keepProviders!==undefined) DB.settings.providers=keepProviders;

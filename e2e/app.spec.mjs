@@ -478,3 +478,94 @@ test("barra: menu ⋯ Mais abre e leva às ações secundárias", async ({ page 
   await expect(page.locator("#cockpitModal")).toHaveClass(/open/);
   await expect(page.locator("#moreMenu")).not.toHaveClass(/show/); // fecha ao escolher
 });
+
+/* ==================== segurança: correções do report ofensivo ==================== */
+
+test("higiene: IDs maliciosos em estado que entra viram IDs seguros (fecha os handlers inline)", async ({ page }) => {
+  const ids = await page.evaluate(() => {
+    DB = migrate({ version: 5, companies: [
+      { id: "x'),alert(1);//", name: "Mau", emoji: "🏢", x: 0, y: 0, projects: [
+        { id: '"><img src=x onerror=alert(1)>', name: "P", emoji: "🚀", x: 0, y: 0,
+          apps: [{ id: "a')//", name: "S" }], chats: [{ id: "c'x", title: "t" }], todos: [] },
+      ] },
+    ], settings: { providers: [{ id: "p'x", name: "Groq", models: ["m"] }] } });
+    save(); render();
+    const c = DB.companies[0], p = c.projects[0];
+    return { co: c.id, pj: p.id, ap: p.apps[0].id, ch: p.chats[0].id, pr: DB.settings.providers[0].id };
+  });
+  const safe = /^[A-Za-z0-9_-]{1,40}$/;
+  for (const [k, v] of Object.entries(ids)) expect(v, `id ${k} normalizado`).toMatch(safe);
+  expect(await page.locator("img[onerror]").count(), "nenhum <img onerror> escapou pro DOM").toBe(0);
+});
+
+test("higiene: img de logo fora do allowlist é descartada (sem breakout de atributo)", async ({ page }) => {
+  const r = await page.evaluate(() => {
+    const bad = migrate({ version: 5, companies: [{ id: "co1", name: "X", emoji: "🏢", x: 0, y: 0, img: 'x" onerror="alert(1)', projects: [] }] });
+    const ok = migrate({ version: 5, companies: [{ id: "co2", name: "Y", emoji: "🏢", x: 0, y: 0, img: "data:image/png;base64,iVBORw0KGgo=", projects: [] }] });
+    return { bad: bad.companies[0].img, ok: ok.companies[0].img };
+  });
+  expect(r.bad).toBe("");                                        // aspas/HTML → rejeitado
+  expect(r.ok).toBe("data:image/png;base64,iVBORw0KGgo=");      // dataURL de imagem legítimo passa
+});
+
+test("exfil: mcpUrl/providers plantados no state.json remoto NÃO são aplicados (token não vaza)", async ({ page }) => {
+  const payload = { updatedAt: 9999999999999, device: "atacante",
+    db: { version: 5, companies: [], settings: { mcpUrl: "https://evil.example.com", providers: [{ id: "p", apiKey: "roubada" }] } } };
+  await page.route("https://api.github.com/**", (route) => {
+    if (route.request().url().includes("/contents/state.json")) {
+      return route.fulfill({ json: { sha: "s1", content: Buffer.from(JSON.stringify(payload)).toString("base64") } });
+    }
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  const res = await page.evaluate(async () => {
+    DB.settings = DB.settings || {};
+    DB.settings.githubToken = "ghp_local"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    delete DB.settings.mcpUrl; delete DB.settings.providers;   // local no DEFAULT (mcpUrl indefinido = o furo do report)
+    save();
+    localStorage.setItem("workspace-map-v3-syncat", "1");
+    await pullState({ force: true });
+    return { mcp: DB.settings.mcpUrl, prov: DB.settings.providers, urlFn: mcpUrl() };
+  });
+  expect(res.mcp, "mcpUrl remoto descartado").toBeUndefined();
+  expect(res.prov, "providers remotos descartados").toBeUndefined();
+  expect(res.urlFn, "cai no default, não no domínio do atacante").toBe("https://workspace-mcp.antonioz2022.workers.dev");
+});
+
+test("exfil: backup importado com mcpUrl/providers/token maliciosos é higienizado", async ({ page }) => {
+  await page.evaluate(() => { DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_MEU_LOCAL"; save(); });
+  const mal = JSON.stringify({ version: 5,
+    companies: [{ id: "co1", name: "Boa", emoji: "🏢", x: 0, y: 0, projects: [] }],
+    settings: { mcpUrl: "https://evil.example.com", providers: [{ id: "p", apiKey: "x" }], githubToken: "ghp_INJETADO" } });
+  await page.setInputFiles("#importFile", { name: "backup.json", mimeType: "application/json", buffer: Buffer.from(mal) });
+  await expect(page.locator(".node.co .tag", { hasText: "Boa" })).toBeVisible();   // barreira: importou e renderizou
+  const res = await page.evaluate(() => ({ mcp: DB.settings.mcpUrl, prov: DB.settings.providers, tok: DB.settings.githubToken }));
+  expect(res.mcp).toBeUndefined();
+  expect(res.prov).toBeUndefined();
+  expect(res.tok, "preservou o token LOCAL, ignorou o injetado").toBe("ghp_MEU_LOCAL");
+});
+
+test("URL de serviço: javascript: não vira link nem é fetchado; https válido rende com rel de segurança", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  await page.evaluate(() => {
+    const p = DB.companies[0].projects[0];
+    p.apps = [{ id: "svc1", name: "Painel", dash: "javascript:alert(1)", url: "https://exemplo.com/app", health: "javascript:alert(1)" }];
+    save(); sel = { id: "svc1", co: DB.companies[0], pj: p, type: "ap" }; openDrawer(findNode("svc1"));
+  });
+  await expect(page.locator("#drawer")).toHaveClass(/open/);
+  expect(await page.locator('#drawer a[href^="javascript:"]').count(), "nenhum href javascript:").toBe(0);
+  await expect(page.locator('#drawer a.link:has-text("Abrir painel")'), "dash perigoso não vira link").toHaveCount(0);
+  const ok = page.locator('#drawer a.link[href="https://exemplo.com/app"]');
+  await expect(ok).toHaveCount(1);
+  await expect(ok).toHaveAttribute("rel", "noopener noreferrer");
+});
+
+test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
+  const codes = await page.evaluate(async () => {
+    const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);
+    return { seed: await get("/src/js/seed.local.js"), mod: await get("/src/js/12-estado.js"), manifest: await get("/manifest.webmanifest") };
+  });
+  expect(codes.seed, "seed.local.js nunca servido").toBe(404);
+  expect(codes.mod, "fonte src/ não servida").toBe(404);
+  expect(codes.manifest, "estático do PWA continua ok").toBe(200);
+});

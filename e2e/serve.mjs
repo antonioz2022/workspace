@@ -20,10 +20,13 @@ http.createServer((req, res) => {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     return res.end(html);
   }
-  const file = path.join(ROOT, p.replaceAll("..", ""));   // sem path traversal
-  if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+  // allowlist ESTRITA: só os estáticos que o PWA precisa em runtime. NUNCA src/ (seed.local.js),
+  // backups/, brain/… — o servidor de teste jamais deve poder servir dados locais.
+  const ok = p === "/sw.js" || p === "/manifest.webmanifest" || /^\/assets\/[A-Za-z0-9._-]+$/.test(p);
+  const file = path.join(ROOT, p);
+  if (ok && fs.existsSync(file) && fs.statSync(file).isFile()) {
     res.writeHead(200, { "content-type": MIME[path.extname(file)] || "application/octet-stream" });
     return res.end(fs.readFileSync(file));
   }
   res.writeHead(404); res.end("not found");
-}).listen(4599, () => console.log("e2e: servindo dist + estáticos em http://127.0.0.1:4599"));
+}).listen(4599, "127.0.0.1", () => console.log("e2e: servindo dist + estáticos em http://127.0.0.1:4599"));
