@@ -167,6 +167,12 @@
     color:var(--tx3); font-size:12px; letter-spacing:.4px; pointer-events:none;
     background:rgba(8,11,17,.55); padding:6px 16px; border-radius:99px; backdrop-filter:blur(8px);
   }
+  .mapfilter{ position:fixed; top:64px; left:18px; z-index:9; display:flex; gap:6px; flex-wrap:wrap; max-width:min(70vw,520px); }
+  .mapfilter .fc{ background:var(--glass); backdrop-filter:blur(16px); border:1px solid var(--line); color:var(--tx2); font-size:11.5px; font-weight:600; padding:5px 11px; border-radius:99px; cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:5px; }
+  .mapfilter .fc:hover{ border-color:var(--ac); color:var(--tx); }
+  .mapfilter .fc.on{ background:linear-gradient(135deg,#7C4FF0,#9D6BFF); border-color:transparent; color:#fff; box-shadow:0 6px 18px rgba(124,79,240,.35); }
+  .mapfilter .fc .n{ opacity:.72; font-weight:700; }
+  .node.dimmed{ opacity:.15; filter:grayscale(.7); pointer-events:none; }
 
   /* ===== drawer ===== */
   .drawer{
@@ -375,6 +381,7 @@
   <button onclick="zoomBy(.18)">＋</button>
   <button onclick="fitView()" title="centralizar">⌂</button>
 </div>
+<div class="mapfilter" id="mapFilter"></div>
 <div class="helper">arraste o fundo pra navegar · scroll pra zoom · clique nos nós pra expandir · arraste um nó pra reposicionar</div>
 
 <!-- DRAWER -->
@@ -766,6 +773,7 @@ function render(){
   newborn.clear();
   updateHud();
   renderWsPill();
+  renderMapFilter();
   applyCam();
   // pings
   DB.companies.forEach(c=>c.projects.forEach(p=>p.apps.forEach(a=>{
@@ -781,10 +789,26 @@ function edgeHtml(x1,y1,x2,y2,color,thick){
   return `<path class="edge ${thick?'':'dim'}" stroke="${esc(color)}" d="M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}"/>`;
 }
 
+/* ===== filtro de projetos por status (destaca no mapa) ===== */
+let mapFilter="all";
+function renderMapFilter(){
+  const el=document.getElementById("mapFilter"); if(!el) return;
+  const cnt={ativo:0, pausado:0, concluido:0}, total=DB.companies.reduce((s,c)=>s+c.projects.length,0);
+  for(const c of DB.companies) for(const p of c.projects){ const s=p.status||"ativo"; if(cnt[s]!=null) cnt[s]++; }
+  if(!total){ el.innerHTML=""; return; }
+  const opts=[["all","Todos",total],["ativo","🟢 Ativos",cnt.ativo],["pausado","🟡 Pausados",cnt.pausado],["concluido","⚪ Concluídos",cnt.concluido]];
+  el.innerHTML=opts.map(([v,lb,n])=>`<button class="fc ${mapFilter===v?"on":""}" onclick="setMapFilter('${v}')">${lb} <span class="n">${n}</span></button>`).join("");
+}
+function setMapFilter(v){ mapFilter = (mapFilter===v && v!=="all") ? "all" : v; renderMapFilter(); render(); }
 function nodeHtml(type, item, c, p, ap){
   const id = item.id;
   const isSel = sel && sel.id===id;
   const enter = newborn.has(id) ? "enter" : "";
+  let dimCls="";
+  if(mapFilter!=="all"){
+    const st = type==="pj" ? (item.status||"ativo") : (type==="ap" && p ? (p.status||"ativo") : null);
+    if(st && st!==mapFilter) dimCls=" dimmed";
+  }
   let inner="", tag="", sub="", extra="";
   if(type==="co"){
     inner = orbInner(c, "🏢");
@@ -809,7 +833,7 @@ function nodeHtml(type, item, c, p, ap){
     if(dotCls) extra = `<span class="sdot ${dotCls}" id="nd-${ap.id}"></span>`;
   }
   return `
-  <div class="node ${type} ${isSel?'sel':''} ${enter}" data-id="${id}" data-type="${type}" style="left:${item.x}px; top:${item.y}px">
+  <div class="node ${type} ${isSel?'sel':''} ${enter}${dimCls}" data-id="${id}" data-type="${type}" style="left:${item.x}px; top:${item.y}px">
     <div class="orb">${inner}${extra}</div>
     <div class="tag">${tag}</div>
     ${sub?`<div class="sub">${sub}</div>`:""}
@@ -2387,8 +2411,32 @@ function teleInner(c,p,state){
       <button class="btn sm" onclick="refreshProjClick('${p.id}')">🔄 Atualizar</button>
       <button class="btn sm primary" id="copyCtxBtn" onclick="copyProjectContext('${p.id}')" title="Copia commits + pendências + memória atual pra colar no Claude Code / Codex">📋 Contexto p/ IA</button>
       <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório, versionado no git">🧩 Brain no repo</button>
+      ${R?`<button class="btn sm" onclick="createRepoIssue('${p.id}')" title="Abrir uma issue neste repositório">＋ Nova issue</button>`:""}
       ${isGh?"":`<button class="btn sm ghost" onclick="disconnectProjDir('${p.id}')" title="esquecer a pasta">⊘</button>`}
     </div>${commitsList}${issuesList}${prsList}${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
+}
+/* abre uma issue no repo do projeto (ação do usuário: título + descrição + confirmar) */
+async function createRepoIssue(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj") return;
+  const repo=f.pj.github;
+  if(!repo){ uiToast("Este projeto não tem repositório linkado.","warn"); return; }
+  if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub (⚙ Contas) pra criar issues.","warn"); return; }
+  const title=await uiPrompt({title:"Nova issue", message:`Título da issue em ${repo}:`, placeholder:"ex.: bug ao salvar a memória", okLabel:"Próximo →"});
+  if(title===null) return;
+  if(!title.trim()){ uiToast("A issue precisa de um título.","warn"); return; }
+  const body=await uiPrompt({title:"Nova issue", message:`Descrição (opcional) — vai virar a issue "${title.trim()}":`, placeholder:"detalhes, passos, contexto…", okLabel:"Criar issue"});
+  if(body===null) return;   // cancelou na 2ª etapa
+  try{
+    const r=await fetch(`https://api.github.com/repos/${repo}/issues`,{method:"POST",
+      headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
+      body:JSON.stringify({title:title.trim(), body:body||""})});
+    if(!r.ok){ const j=await r.json().catch(()=>({}));
+      throw new Error((r.status===403||r.status===404)?"o token não pode abrir issues nesse repo (precisa de acesso de escrita)":(j.message||("HTTP "+r.status))); }
+    const j=await r.json();
+    uiToast("✓ Issue #"+j.number+" criada em "+repo,"ok");
+    delete teleCache[pid];   // força releitura pra a issue nova aparecer na lista
+    try{ const t=await getTelemetry(f.pj,{promptLocal:false}); paintTele(pid, t?"ready":"none"); }catch(e){}
+  }catch(e){ uiToast("Criar issue: "+(e.message||e),"bad"); }
 }
 function teleSectionHtml(c,p,state){ return `<div class="dr-sec">📡 Estado do projeto</div><div id="teleWrap">${teleInner(c,p,state)}</div>`; }
 function paintTele(pid,state){ const el=document.getElementById("teleWrap"); if(!el) return; const f=findNode(pid); if(f&&f.type==="pj") el.innerHTML=teleInner(f.co,f.pj,state); }
@@ -3145,6 +3193,7 @@ function renderCockpit(){
     <div class="chips" style="margin-bottom:12px">
       <span class="chip">${rows.length} projeto(s)</span>
       <span class="chip">${rows.reduce((s,r)=>s+r.open,0)} pendência(s) aberta(s)</span>
+      ${rows.some(r=>r.t&&r.t.repo)?`<span class="chip">🐛 ${rows.reduce((s,r)=>s+((r.t&&r.t.repo)?r.t.repo.openIssues:0),0)} issues+PRs</span>`:""}
       <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
       <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
     </div>
@@ -3152,11 +3201,13 @@ function renderCockpit(){
       const dot=r.alerts>0?"🔴":(r.open>0?"🟡":"🟢");
       const commit=r.commitTs?`último commit ${agoStr(r.commitTs)}`:(r.t?"sem git":"telemetria não lida");
       const src=r.t?(r.t.source==="github"?"☁":"📁"):"";
+      const gh=(r.t&&r.t.repo)?` · 🐛 ${r.t.repo.openIssues}${(r.t.prs&&r.t.prs.length)?` · 🔀 ${r.t.prs.length}`:""}${r.t.repo.lang?` · ${esc(r.t.repo.lang)}`:""}`:"";
+      const st=r.p.status&&r.p.status!=="ativo"?` <span class="chip" style="padding:1px 7px;font-size:10px">${r.p.status==="pausado"?"🟡 pausado":"⚪ concluído"}</span>`:"";
       return `<div class="mini-item" onclick="closeModals();jumpTo('${r.p.id}')">
         <span class="mi-emoji">${r.p.img?`<img src="${esc(r.p.img)}" style="width:26px;height:26px;object-fit:contain;vertical-align:middle">`:esc(r.p.emoji||"🚀")}</span>
         <span style="flex:1;min-width:0">
-          <b>${esc(r.p.name)}</b> <span style="color:var(--tx3);font-size:11px">· ${esc(r.c.name)}</span><br>
-          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src} · ~US$ ${pjCost(r.p).toFixed(0)}/mês</span>
+          <b>${esc(r.p.name)}</b> <span style="color:var(--tx3);font-size:11px">· ${esc(r.c.name)}</span>${st}<br>
+          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src}${gh} · ~US$ ${pjCost(r.p).toFixed(0)}/mês</span>
         </span>
         <span class="arrow">→</span>
       </div>`;
