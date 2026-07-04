@@ -4064,11 +4064,52 @@ function memSyncBannerHtml(res,pid){
   const draftBtn=(res.commits&&res.commits.length)
     ?`<button class="btn sm primary" onclick="memDraftCheckpoint('${pid}')" title="Gera um rascunho de checkpoint a partir dos commits e salva na memória com 1 clique, sem depender de IA">💾 Rascunho de checkpoint</button> `
     :"";
+  const auto=memAutoDraftOn()
+    ?`auto ligado · <a href="#" onclick="memAutoToggle('${pid}');return false" style="color:var(--tx3)">desligar</a>`
+    :`auto desligado · <a href="#" onclick="memAutoToggle('${pid}');return false" style="color:var(--tx3)">ligar</a>`;
   const box=inner=>`<div style="font-size:12px;color:var(--warn);background:rgba(245,165,36,.09);border:1px solid rgba(245,165,36,.28);border-radius:9px;padding:8px 11px;margin:2px 0 8px">${inner}
-    <div style="margin-top:6px">${draftBtn}<button class="btn sm" onclick="copyProjectContext('${pid}')" title="Monta o prompt (commits + pendências + memória) pra a IA da sessão do repo reescrever a memória">📋 Gerar atualização pra IA</button></div></div>`;
+    <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">${draftBtn}<button class="btn sm" onclick="copyProjectContext('${pid}')" title="Monta o prompt (commits + pendências + memória) pra a IA da sessão do repo reescrever a memória">📋 Gerar atualização pra IA</button><span style="font-size:10.5px;color:var(--tx3)" title="Com o automático ligado, ao abrir o painel os commits sem checkpoint viram sessão na memória sem clique">${auto}</span></div></div>`;
   if(res.never) return box(`⚠ A memória deste projeto <b>ainda não foi escrita no cérebro</b>. Escreva acima (sobe sozinho) ou gere o contexto pra sua IA.`);
   const n=res.count>=20?"20+":String(res.count);
   return box(`⚠ <b>Memória possivelmente defasada:</b> ${n} commit(s) no repo desde a última atualização da memória${res.memTs?` · memória ${esc(agoStr(res.memTs))}`:""}${res.codeTs?` · último commit ${esc(agoStr(res.codeTs))}`:""}.`);
+}
+/* ===== modo automático: o painel aceita o rascunho SOZINHO ao abrir =====
+   Memória defasada só importa quando alguém lê; a leitura pelo painel é este momento.
+   No boot (após o pull do estado), varre os projetos com repo e, se houver commits
+   depois da memória, grava o rascunho sem clique. Conservador: preserva o 🎯 existente
+   (só o clique manual troca o foco), nunca cria memória do zero (never → só banner) e
+   dá pra desligar no próprio banner (DB.settings.memAutoDraft=false, sincroniza). */
+function memAutoDraftOn(){ return ((DB.settings||{}).memAutoDraft)!==false; }
+function memAutoToggle(pid){
+  DB.settings=DB.settings||{}; DB.settings.memAutoDraft=!memAutoDraftOn();
+  save(); if(typeof scheduleSync==="function") scheduleSync();
+  const f=findNode(pid); if(f&&f.type==="pj") hydrateMemSync(f.co,f.pj);
+  uiToast(memAutoDraftOn()?"Rascunho automático ligado: ao abrir o painel, commits sem checkpoint viram sessão na memória.":"Rascunho automático desligado: volta a pedir o clique no banner.");
+}
+function memAutoApplyDraft(p,res){
+  const body=[`Rascunho automático (aceito sozinho ao abrir o painel) a partir dos commits do repo \`${p.github||""}\`:`]
+    .concat(res.commits.map(x=>`- \`${x.sha}\` ${x.when}: ${x.msg}`)).join("\n");
+  const curFocus=(typeof projFocus==="function"?projFocus(p):"")||"";
+  const next=curFocus || `revisar e continuar do último commit: ${res.commits[0].msg}`.slice(0,160);
+  memInsertSession(p, body, next);
+  p._memDirty=true;
+  memSyncCache[p.id]={stale:false,count:0,memTs:Date.now(),codeTs:null,never:false,at:Date.now(),commits:[]};
+}
+async function memAutoDraftSweep(){
+  if(!stateSyncOn() || !memAutoDraftOn()) return 0;
+  let saved=0;
+  for(const c of DB.companies) for(const p of (c.projects||[])){
+    if(!p.github || p.noRepo) continue;
+    const res=await computeMemStale(c,p).catch(()=>null);
+    if(!res || !res.stale || res.never || !res.commits || !res.commits.length) continue;
+    memAutoApplyDraft(p,res); saved++;
+  }
+  if(saved){
+    save(); if(typeof scheduleSync==="function") scheduleSync();
+    if(sel){ const f=findNode(sel.id); if(f&&f.type==="pj") openDrawer(f); }
+    uiToast(`🧠 ${saved} memória(s) atualizada(s) sozinha(s) com o rascunho dos commits. Revise no projeto se quiser ajustar.`,"ok");
+  }
+  return saved;
 }
 /* 💾 Rascunho de checkpoint: transforma os commits órfãos numa sessão datada na memória
    (mesmo formato da tool MCP checkpoint, via memInsertSession) — o pior caso deixa de ser
@@ -5054,7 +5095,11 @@ wsBoot();
 if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
 ensureBrain();
 if(typeof renderResumeBanner==="function") renderResumeBanner();   // ▶ Retomar (recência local; re-renderiza após o pull)
-if(stateSyncOn()) setTimeout(()=>{ pullState().catch(()=>{}).then(()=>{ if(typeof renderResumeBanner==="function") renderResumeBanner(); }); }, 600);
+if(stateSyncOn()) setTimeout(()=>{ pullState().catch(()=>{}).then(()=>{
+  if(typeof renderResumeBanner==="function") renderResumeBanner();
+  // rascunho automático: depois do pull (estado fresco de outros aparelhos), commits sem checkpoint viram sessão sozinhos
+  if(typeof memAutoDraftSweep==="function") setTimeout(()=>memAutoDraftSweep().catch(()=>{}), 2500);
+}); }, 600);
 if(typeof startCollabPoll==="function") startCollabPoll();   // colaboração viva: avisa quando alguém atualiza
 { const d=patDays(); const b=document.getElementById("contasBtn"); if(b && d!==null && d<10) b.textContent="⚙ Contas ⚠"; }
 // PWA: registra o service worker (só quando servido por http/https; abrir de file:// segue funcionando)

@@ -624,6 +624,61 @@ test("💾 rascunho de checkpoint: commits órfãos viram sessão na memória co
   await expect(page.locator("#memSyncBanner")).not.toContainText("defasada");
 });
 
+test("🧠 rascunho AUTOMÁTICO: varredura no boot grava sozinha, preserva o 🎯 e respeita o desligado", async ({ page }) => {
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/commits") && url.includes("memoria.md"))
+      return route.fulfill({ json: [{ commit: { author: { date: "2020-01-01T00:00:00Z" } } }] });
+    if (url.includes("/repos/owner/repo/commits"))
+      return route.fulfill({ json: [
+        { sha: "cccccc1111111", commit: { message: "feat: proativo ligado", author: { date: "2030-01-02T00:00:00Z" } } },
+      ] });
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  // desligado → varredura não grava nada
+  const off = await page.evaluate(async () => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    DB.settings.memAutoDraft = false;
+    const p = DB.companies[0].projects[0]; p.github = "owner/repo";
+    p.context = "# Memória — Site\n\n🎯 Onde parei: foco escrito pela IA\n\n## Estado\nbase\n"; save();
+    return { saved: await memAutoDraftSweep(), ctx: p.context };
+  });
+  expect(off.saved).toBe(0);
+  expect(off.ctx).not.toContain("Rascunho automático");
+  // ligado (padrão) → grava sozinho e PRESERVA o 🎯 existente
+  const on = await page.evaluate(async () => {
+    DB.settings.memAutoDraft = true;
+    delete memSyncCache[DB.companies[0].projects[0].id];
+    const saved = await memAutoDraftSweep();
+    const p = DB.companies[0].projects[0];
+    return { saved, ctx: p.context };
+  });
+  expect(on.saved).toBe(1);
+  expect(on.ctx).toContain("🎯 Onde parei: foco escrito pela IA");   // foco humano/IA não é clobberado
+  expect(on.ctx).toContain("Rascunho automático (aceito sozinho ao abrir o painel)");
+  expect(on.ctx).toContain("- `cccccc1` 2030-01-02: feat: proativo ligado");
+  expect(on.ctx).toContain("base");                                  // corpo preservado
+  await expect(page.locator(".ui-toast")).toContainText("memória(s) atualizada(s) sozinha(s)");
+  // memória nunca escrita no cérebro (never) → varredura NÃO cria do zero (fica pro banner)
+  await page.unroute("https://api.github.com/**");
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/commits") && url.includes("memoria.md")) return route.fulfill({ json: [] });
+    if (url.includes("/repos/owner/repo/commits"))
+      return route.fulfill({ json: [{ sha: "ddddddd222222", commit: { message: "feat: x", author: { date: "2030-01-03T00:00:00Z" } } }] });
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  const nv = await page.evaluate(async () => {
+    const p = DB.companies[0].projects[0];
+    p.context = ""; delete memSyncCache[p.id];
+    return { saved: await memAutoDraftSweep(), ctx: p.context };
+  });
+  expect(nv.saved).toBe(0);
+  expect(nv.ctx).toBe("");
+});
+
 test("grafo de conhecimento: relação criada pela UI aparece no drawer, no mapa, no GRAFO.md e sobrevive ao sync", async ({ page }) => {
   // 2 empresas + 2 projetos direto no estado (posições distintas) — evita flakiness de clique/sobreposição
   await page.evaluate(() => {
