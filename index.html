@@ -745,6 +745,12 @@ const worldEl=document.getElementById("world");
 const nodesEl=document.getElementById("nodes");
 const edgesEl=document.getElementById("edges");
 const newborn = new Set();
+// acessibilidade: nós são role=button/tabindex=0 → Enter/Espaço ativam (delegado, sobrevive ao re-render)
+nodesEl.addEventListener("keydown", e=>{
+  const node = e.target && e.target.closest && e.target.closest(".node");
+  if(!node) return;
+  if(e.key==="Enter" || e.key===" " || e.key==="Spacebar"){ e.preventDefault(); handleClick(node.dataset.id, node.dataset.type); }
+});
 
 function applyCam(){
   worldEl.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.z})`;
@@ -837,8 +843,11 @@ function nodeHtml(type, item, c, p, ap){
     const dotCls = ap.health ? (pc?pc.cls:"load") : (ap.alert?"alert":"");
     if(dotCls) extra = `<span class="sdot ${dotCls}" id="nd-${ap.id}"></span>`;
   }
+  const typeName = type==="co"?"empresa":(type==="pj"?"projeto":"serviço");
+  const aria = `${typeName} ${tag}${sub?", "+sub:""}${type!=="ap"?(expanded.has(id)?", aberto":", fechado"):""}`;
   return `
-  <div class="node ${type} ${isSel?'sel':''} ${enter}${dimCls}" data-id="${id}" data-type="${type}" style="left:${item.x}px; top:${item.y}px">
+  <div class="node ${type} ${isSel?'sel':''} ${enter}${dimCls}" data-id="${id}" data-type="${type}" style="left:${item.x}px; top:${item.y}px"
+       role="button" tabindex="0" aria-label="${aria}"${type!=="ap"?` aria-expanded="${expanded.has(id)}"`:""}>
     <div class="orb">${inner}${extra}</div>
     <div class="tag">${tag}</div>
     ${sub?`<div class="sub">${sub}</div>`:""}
