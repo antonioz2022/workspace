@@ -181,7 +181,8 @@ let prPid=null;
 async function openPrModal(pid){
   const f=findNode(pid); if(!f||f.type!=="pj"||!f.pj.github) return;
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub (⚙ Contas) pra abrir PRs.","warn"); return; }
-  prPid=pid; const repo=f.pj.github;
+  const repo=safeRepo(f.pj.github); if(!repo){ uiToast("Repositório inválido — use o formato owner/repo.","warn"); return; }
+  prPid=pid;
   document.getElementById("prModal").classList.add("open");
   document.getElementById("prRepoLine").textContent="em "+repo;
   document.getElementById("prTitle").value=""; document.getElementById("prBody").value="";
@@ -204,7 +205,7 @@ async function openPrModal(pid){
 }
 async function createRepoPR(){
   const f=findNode(prPid); if(!f||f.type!=="pj") return;
-  const repo=f.pj.github;
+  const repo=safeRepo(f.pj.github); if(!repo){ const st=document.getElementById("prStatus"); if(st){ st.textContent="repositório inválido (use owner/repo)"; st.style.color="var(--warn)"; } return; }
   const head=document.getElementById("prHead").value, base=document.getElementById("prBase").value;
   const title=(document.getElementById("prTitle").value||"").trim(), body=document.getElementById("prBody").value||"";
   const st=document.getElementById("prStatus");
@@ -228,8 +229,8 @@ async function createRepoPR(){
 /* abre uma issue no repo do projeto (ação do usuário: título + descrição + confirmar) */
 async function createRepoIssue(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
-  const repo=f.pj.github;
-  if(!repo){ uiToast("Este projeto não tem repositório linkado.","warn"); return; }
+  const repo=safeRepo(f.pj.github);
+  if(!repo){ uiToast(f.pj.github?"Repositório inválido — use owner/repo.":"Este projeto não tem repositório linkado.","warn"); return; }
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub (⚙ Contas) pra criar issues.","warn"); return; }
   const title=await uiPrompt({title:"Nova issue", message:`Título da issue em ${repo}:`, placeholder:"ex.: bug ao salvar a memória", okLabel:"Próximo →"});
   if(title===null) return;

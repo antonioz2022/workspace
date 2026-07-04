@@ -785,6 +785,72 @@ test("💾 Salvar progresso: 1 clique grava o checkpoint na memória (sem IA) e 
   expect(after).toContain("checkpoint pela UI");
 });
 
+test("higiene v2: status/prioridade/coordenadas/repo/prazo maliciosos são coeridos na entrada", async ({ page }) => {
+  const r = await page.evaluate(() => {
+    const bad = migrate({ version: 6, companies: [{
+      id: "co1", name: "X", emoji: "🏢", x: '0"><img src=x onerror=alert(1)>', y: 5,
+      projects: [{ id: "p1", name: "P", emoji: "🚀", x: "NaNstuff", y: 10, status: '"><b>', github: "trusted/repo/../../evil/repo",
+        apps: [{ id: "a1", name: "S", x: '9" onmouseover=alert(1)', y: 1 }], chats: [], todos: [{ t: "t", done: false, prio: '"><img>', due: "javascript:1" }] }],
+    }] });
+    const c = bad.companies[0], p = c.projects[0];
+    return { cx: c.x, px: p.x, ax: p.apps[0].x, status: p.status, github: p.github, prio: p.todos[0].prio, due: p.todos[0].due };
+  });
+  expect(r.cx, "coord string → null").toBeNull();
+  expect(r.px).toBeNull();
+  expect(r.ax).toBeNull();
+  expect(r.status, "status fora do enum → ativo").toBe("ativo");
+  expect(r.github, "repo com ../ → vazio").toBe("");
+  expect(r.prio, "prio fora do enum → undefined").toBeUndefined();
+  expect(r.due, "due não-data → undefined").toBeUndefined();
+});
+
+test("higiene v2: índice semântico do repo com goId/url maliciosos é higienizado ao carregar", async ({ page }) => {
+  const evil = { model: "Xenova/paraphrase-multilingual-MiniLM-L12-v2", builtAt: 1, items: [
+    { scope: "x", file: "f", goId: "a'),alert(1)//", url: "javascript:alert(1)", raw: "r", vec: [1, 0, 0] },
+  ] };
+  await page.route("https://api.github.com/**", (route) => {
+    if (route.request().url().includes("semindex")) return route.fulfill({ json: { sha: "x", content: Buffer.from(JSON.stringify(evil)).toString("base64") } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  const item = await page.evaluate(async () => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    semIndex = null; await idbSet("cortex-semindex", null);
+    return (await loadSemIndex()).items[0];
+  });
+  expect(item.goId, "goId malicioso → null (não vira onclick)").toBeNull();
+  expect(item.url, "javascript: → null (não vira href)").toBeNull();
+});
+
+test("confused deputy: publishSemIndex NÃO publica trechos de código (ficam locais)", async ({ page }) => {
+  let published = null;
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url(), method = route.request().method();
+    if (url.includes("semindex") && method === "PUT") { published = JSON.parse(Buffer.from(JSON.parse(route.request().postData()).content, "base64").toString("utf8")); return route.fulfill({ status: 201, json: { content: { sha: "x" } } }); }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.evaluate(async () => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    semIndex = { model: "m", builtAt: 1, repo: "r", items: [
+      { scope: "empresa X", raw: "brain", goId: "c1", url: null, code: false, vec: [1] },
+      { scope: "código · P", raw: "SEGREDO_DO_CODIGO", goId: "p1", url: "https://github.com/o/r/blob/HEAD/README.md", code: true, vec: [1] },
+    ] };
+    await publishSemIndex();
+  });
+  expect(published).not.toBeNull();
+  expect(published.items.map((i) => i.scope)).not.toContain("código · P");
+  expect(JSON.stringify(published)).not.toContain("SEGREDO_DO_CODIGO");
+});
+
+test("SSRF: auto-ping pula health de host privado; clique explícito verifica", async ({ page }) => {
+  let calls = 0;
+  await page.route("http://192.168.0.9/**", (route) => { calls++; return route.fulfill({ status: 200, body: "ok" }); });
+  const autoCls = await page.evaluate(async () => { const a = { id: "svc1", name: "S", health: "http://192.168.0.9/health" }; await ping(a, true); return pingCache[a.id] && pingCache[a.id].cls; });
+  expect(autoCls, "auto marca local, não busca").toBe("na");
+  expect(calls, "nenhum fetch automático a host privado").toBe(0);
+  await page.evaluate(async () => { const a = { id: "svc1", name: "S", health: "http://192.168.0.9/health" }; await ping(a, false); });
+  expect(calls, "clique explícito verifica").toBeGreaterThan(0);
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);

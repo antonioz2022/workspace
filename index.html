@@ -605,8 +605,8 @@
     <button class="btn sm" onclick="askSuggest()" title="descobre relações do grafo por proximidade semântica">💡 Sugerir relações</button>
     <span id="askStatus" style="font-size:11.5px"></span>
   </div>
-  <label style="font-size:11.5px;color:var(--tx3);display:inline-flex;align-items:center;gap:6px;margin-bottom:10px" title="lê README, CLAUDE.md, ARCHITECTURE e specs recentes dos repos e indexa junto — a busca passa a alcançar o detalhe técnico, não só o panorama">
-    <input type="checkbox" id="askIncludeCode" checked> incluir docs do código (README, specs, CLAUDE.md) — alcança o detalhe técnico
+  <label style="font-size:11.5px;color:var(--tx3);display:inline-flex;align-items:flex-start;gap:6px;margin-bottom:10px" title="lê README/CLAUDE/ARCHITECTURE/specs dos repos com o SEU token e indexa junto. Fica SÓ neste aparelho (não é publicado no repo compartilhado), pra não expor docs de repo privado a colaboradores que não têm acesso a ele.">
+    <input type="checkbox" id="askIncludeCode"> <span>incluir docs do código (README, specs, CLAUDE.md) — alcança o detalhe técnico. <b>Lido com seu token e mantido só neste aparelho</b> (não sobe pro repo compartilhado).</span>
   </label>
   <div id="askResults"></div>
   <div id="askAnswer"></div>
@@ -893,6 +893,20 @@ function jsq(v){ return String(v??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").
 // (localhost/IP privado continuam válidos de propósito: health-check de dev local é caso de uso real.)
 function safeUrl(u){ const s=(u==null?"":String(u)).trim(); if(!s) return "";
   try{ const p=new URL(s, location.href); return (p.protocol==="http:"||p.protocol==="https:") ? p.href : ""; }catch(e){ return ""; } }
+// host privado/loopback: um health-check SINCRONIZADO por um colaborador não deve ser
+// buscado AUTOMATICAMENTE (SSRF no navegador da vítima). Só verifica no clique explícito.
+function isPrivateHost(u){
+  try{ const h=new URL(u, location.href).hostname.toLowerCase();
+    return h==="localhost" || h==="::1" || h==="0.0.0.0" || h.endsWith(".local")
+      || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)
+      || /^169\.254\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  }catch(e){ return false; }
+}
+// coordenada segura: só número finito (senão null → o layout recalcula). Fecha o breakout de style="left:${x}".
+function safeCoord(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
+// repo GitHub estrito owner/repo (2 segmentos seguros, sem "..") — impede que `../` redirecione a API.
+function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(v) && !v.includes("..")) ? v : ""; }
+const NODE_STATUS=["ativo","pausado","concluido"], TODO_PRIOS=["alta","media","baixa"];
 // config LOCAL-ONLY: segredos + config de máquina que NUNCA vêm do repo/backup.
 // Ao aplicar estado que ENTRA (pull/restore/import) apagamos qualquer versão injetada
 // ANTES de restaurar a local — senão um mcpUrl/providers plantado no state.json
@@ -902,12 +916,18 @@ function scrubIncomingSettings(db){ if(db&&db.settings) for(const k of LOCAL_ONL
 function hardenDB(db){
   if(!db || !Array.isArray(db.companies)) return db;
   for(const c of db.companies){
-    c.id=safeId(c.id); if("img" in c) c.img=safeImg(c.img);
+    c.id=safeId(c.id); if("img" in c) c.img=safeImg(c.img); c.x=safeCoord(c.x); c.y=safeCoord(c.y);
     if(!Array.isArray(c.projects)) c.projects=[];
     for(const p of c.projects){
-      p.id=safeId(p.id); if("img" in p) p.img=safeImg(p.img);
-      if(Array.isArray(p.apps)) for(const a of p.apps) a.id=safeId(a.id);
+      p.id=safeId(p.id); if("img" in p) p.img=safeImg(p.img); p.x=safeCoord(p.x); p.y=safeCoord(p.y);
+      p.status=NODE_STATUS.indexOf(p.status)>=0?p.status:"ativo";                 // enum → some XSS via ${status}
+      if("github" in p) p.github=safeRepo(p.github);                              // owner/repo estrito → sem `../`
+      if(Array.isArray(p.apps)) for(const a of p.apps){ a.id=safeId(a.id); a.x=safeCoord(a.x); a.y=safeCoord(a.y); }
       if(Array.isArray(p.chats)) for(const ch of p.chats) ch.id=safeId(ch.id);
+      if(Array.isArray(p.todos)) for(const t of p.todos){
+        t.prio=TODO_PRIOS.indexOf(t.prio)>=0?t.prio:undefined;                    // enum → some injeção em class="tb-${prio}"
+        if(t.due!=null && !/^\d{4}-\d{2}-\d{2}$/.test(t.due)) t.due=undefined;
+      }
     }
   }
   if(db.settings && Array.isArray(db.settings.providers)) for(const pr of db.settings.providers) pr.id=safeId(pr.id);
@@ -1048,7 +1068,7 @@ function render(){
   applyCam();
   // pings
   DB.companies.forEach(c=>c.projects.forEach(p=>p.apps.forEach(a=>{
-    if(a.health && expanded.has(c.id) && expanded.has(p.id)) ping(a);
+    if(a.health && expanded.has(c.id) && expanded.has(p.id)) ping(a, true);   // auto: pula host privado (SSRF)
   })));
 }
 
@@ -1589,7 +1609,7 @@ function openDrawer(f){
     body.innerHTML=`
       ${typeof resumeBlockHtml==="function"?resumeBlockHtml(p):""}
       <div class="chips" style="margin-bottom:12px">
-        <span class="chip" style="color:${p.status==='ativo'?'var(--ok)':(p.status==='pausado'?'var(--warn)':'var(--tx2)')}">● ${p.status||"ativo"}</span>
+        <span class="chip" style="color:${p.status==='ativo'?'var(--ok)':(p.status==='pausado'?'var(--warn)':'var(--tx2)')}">● ${esc(p.status||"ativo")}</span>
         <span class="chip">${p.apps.length} serviço(s)</span>
         <span class="chip cost">~US$ ${pjCost(p).toFixed(0)}/mês</span>
       </div>
@@ -1702,7 +1722,7 @@ function jumpTo(id){
 }
 
 /* ================= ping ================= */
-async function ping(a){
+async function ping(a, auto){
   const upd=(cls,txt)=>{
     pingCache[a.id]={cls,txt};
     const nd=document.getElementById("nd-"+a.id); if(nd) nd.className="sdot "+cls;
@@ -1711,6 +1731,9 @@ async function ping(a){
   if(pingCache[a.id] && pingCache[a.id].fresh) return upd(pingCache[a.id].cls, pingCache[a.id].txt);
   const target=safeUrl(a.health);   // só http(s): impede fetch em javascript:/data:/file: vindos de estado não confiável
   if(!target){ upd("bad","URL inválida"); if(pingCache[a.id]) pingCache[a.id].fresh=true; return; }
+  // health SINCRONIZADO apontando pra host privado/localhost NÃO é buscado automaticamente
+  // (SSRF do navegador da vítima). Só verifica quando o usuário abre o serviço (auto=false).
+  if(auto && isPrivateHost(target)){ upd("na","local — abra o serviço p/ verificar"); return; }   // não marca fresh: o clique explícito ainda pinga
   const t0=performance.now();
   try{
     const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),65000);
@@ -3083,7 +3106,8 @@ let prPid=null;
 async function openPrModal(pid){
   const f=findNode(pid); if(!f||f.type!=="pj"||!f.pj.github) return;
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub (⚙ Contas) pra abrir PRs.","warn"); return; }
-  prPid=pid; const repo=f.pj.github;
+  const repo=safeRepo(f.pj.github); if(!repo){ uiToast("Repositório inválido — use o formato owner/repo.","warn"); return; }
+  prPid=pid;
   document.getElementById("prModal").classList.add("open");
   document.getElementById("prRepoLine").textContent="em "+repo;
   document.getElementById("prTitle").value=""; document.getElementById("prBody").value="";
@@ -3106,7 +3130,7 @@ async function openPrModal(pid){
 }
 async function createRepoPR(){
   const f=findNode(prPid); if(!f||f.type!=="pj") return;
-  const repo=f.pj.github;
+  const repo=safeRepo(f.pj.github); if(!repo){ const st=document.getElementById("prStatus"); if(st){ st.textContent="repositório inválido (use owner/repo)"; st.style.color="var(--warn)"; } return; }
   const head=document.getElementById("prHead").value, base=document.getElementById("prBase").value;
   const title=(document.getElementById("prTitle").value||"").trim(), body=document.getElementById("prBody").value||"";
   const st=document.getElementById("prStatus");
@@ -3130,8 +3154,8 @@ async function createRepoPR(){
 /* abre uma issue no repo do projeto (ação do usuário: título + descrição + confirmar) */
 async function createRepoIssue(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
-  const repo=f.pj.github;
-  if(!repo){ uiToast("Este projeto não tem repositório linkado.","warn"); return; }
+  const repo=safeRepo(f.pj.github);
+  if(!repo){ uiToast(f.pj.github?"Repositório inválido — use owner/repo.":"Este projeto não tem repositório linkado.","warn"); return; }
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub (⚙ Contas) pra criar issues.","warn"); return; }
   const title=await uiPrompt({title:"Nova issue", message:`Título da issue em ${repo}:`, placeholder:"ex.: bug ao salvar a memória", okLabel:"Próximo →"});
   if(title===null) return;
@@ -4350,7 +4374,7 @@ async function cockpitRefreshAll(){
   if(el) el.insertAdjacentHTML("afterbegin",`<div class="dr-desc" id="ckLoading" style="color:var(--tx3)">atualizando telemetria + pings…</div>`);
   for(const c of DB.companies) for(const p of c.projects){
     try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
-    for(const a of p.apps) if(a.health){ if(pingCache[a.id]) pingCache[a.id].fresh=false; ping(a); }
+    for(const a of p.apps) if(a.health){ if(pingCache[a.id]) pingCache[a.id].fresh=false; ping(a, true); }   // auto: pula host privado (SSRF)
   }
   renderCockpit();
   renderActivityFeed();
@@ -4366,10 +4390,15 @@ const EMB_MODEL="Xenova/paraphrase-multilingual-MiniLM-L12-v2";   // multilíngu
 const SEMIDX_KEY="cortex-semindex";       // cache local (IndexedDB)
 const SEMIDX_PATH=".cortex/semindex.json"; // versão portátil no repo (aparelho novo puxa em vez de reconstruir)
 const dismissedPairs=new Set();           // sugestões dispensadas nesta sessão
+const EMB_CDN="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
 let _embPipe=null, _emb=null, semIndex=null;
 function setEmbedder(fn){ _emb=fn; }   // testes/serviço hospedado: fn(texts:string[]) -> vetores normalizados
+// ⚠ SUPPLY-CHAIN (achado aberto, medium): o transformers.js vem de um CDN pinado e executa
+// na origem que guarda o PAT/chaves. O fix correto é isolar num Web Worker (sem acesso a
+// localStorage); pendente de verificação cross-browser antes de trocar (não arriscar quebrar
+// a busca). Mitigação atual: versão pinada (@2.17.2). Ver cortex-objetivo-retomada / TODO.
 async function localEmbedder(texts){
-  const mod=await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+  const mod=await import(EMB_CDN);
   if(mod.env){ mod.env.allowLocalModels=false; mod.env.useBrowserCache=true; }
   if(!_embPipe) _embPipe=await mod.pipeline("feature-extraction", EMB_MODEL);
   const out=[];
@@ -4434,7 +4463,7 @@ async function codeCorpus(onProgress){
       const text=await fetchRepoText(repo, path); if(!text) continue;
       const url=`https://github.com/${repo}/blob/HEAD/${path}`;
       for(const ch of chunkText(text)){ if(count>=CODE_MAX_CHUNKS_PER_REPO) break;
-        items.push({text:`[código · ${p.name} · ${path}] ${ch}`, scope:`código · ${p.name}`, file:path, url, goId:p.id, raw:ch}); count++; }
+        items.push({text:`[código · ${p.name} · ${path}] ${ch}`, scope:`código · ${p.name}`, file:path, url, goId:p.id, raw:ch, code:true}); count++; }
     }
     done++; if(onProgress) onProgress(done, projs.length, "code");
   }
@@ -4457,9 +4486,21 @@ async function buildSemIndex(onProgress, opts){
     if(onProgress) onProgress(Math.min(i+B, items.length), items.length);
   }
   semIndex={ model:EMB_MODEL, builtAt:Date.now(), repo:(typeof stateRepo==="function"?stateRepo():"")||"",
-    items:items.map((it,i)=>({scope:it.scope, file:it.file, goId:it.goId||null, url:it.url||null, raw:it.raw, vec:vecs[i]})) };
+    items:items.map((it,i)=>({scope:it.scope, file:it.file, goId:it.goId||null, url:it.url||null, raw:it.raw, code:!!it.code, vec:vecs[i]})) };
   await idbSet(SEMIDX_KEY, semIndex);
   return semIndex;
+}
+// o índice pode vir do REPO (colaborador com write) — é conteúdo de MENOR confiança. Higieniza:
+// goId só padrão seguro (senão null → item não clicável), url só http(s), campos viram string.
+function sanitizeSemIndex(idx){
+  if(!idx || !Array.isArray(idx.items)) return null;
+  idx.items=idx.items.filter(it=>it && Array.isArray(it.vec)).map(it=>({
+    scope:String(it.scope||""), file:String(it.file||""),
+    goId:(typeof it.goId==="string" && /^[A-Za-z0-9_-]{1,40}$/.test(it.goId))?it.goId:null,
+    url:(typeof safeUrl==="function"?safeUrl(it.url):"")||null, raw:String(it.raw||""), code:!!it.code,
+    vec:it.vec.map(n=>(typeof n==="number"&&isFinite(n))?n:0),
+  }));
+  return idx;
 }
 async function loadSemIndex(){
   if(semIndex) return semIndex;
@@ -4470,14 +4511,17 @@ async function loadSemIndex(){
     if(f){ try{ idx=JSON.parse(f.text); await idbSet(SEMIDX_KEY, idx); }catch(e){} }
   }
   if(idx && idx.model && idx.model!==EMB_MODEL) idx=null;   // modelo diferente → vetores incompatíveis, reconstruir
-  semIndex=idx||null;
+  semIndex = idx ? sanitizeSemIndex(idx) : null;            // conteúdo do repo pode ser malicioso → higieniza
   return semIndex;
 }
-/* publica o índice no repo (portátil entre aparelhos/contas). Fica em .cortex/ (fora das
-   listagens de brand/assets); é o mesmo conteúdo da brain + os vetores — nada de novo secreto. */
+/* publica o índice no repo (portátil entre aparelhos/contas). NÃO publica trechos derivados
+   de CÓDIGO (repos linkados que outros colaboradores podem não ter acesso — leriam docs
+   privados via o índice compartilhado); eles ficam SÓ local (IndexedDB). Publica só o
+   panorama da brain, que já é conteúdo do próprio repo compartilhado. */
 async function publishSemIndex(){
   if(!semIndex || !semIndex.items || typeof stateSyncOn!=="function" || !stateSyncOn() || typeof putBrainFile!=="function") return false;
-  try{ await putBrainFile(SEMIDX_PATH, JSON.stringify(semIndex), "brain: índice semântico"); return true; }
+  const pub={ model:semIndex.model, builtAt:semIndex.builtAt, repo:semIndex.repo, items:semIndex.items.filter(it=>!it.code) };
+  try{ await putBrainFile(SEMIDX_PATH, JSON.stringify(pub), "brain: índice semântico (panorama)"); return true; }
   catch(e){ return false; }
 }
 function cosine(a,b){ let s=0, n=Math.min(a.length,b.length); for(let i=0;i<n;i++) s+=a[i]*b[i]; return s; }   // vetores normalizados → dot
@@ -4881,7 +4925,7 @@ async function autoRefreshAll(force){
     }
     if(sel) paintTele(sel.id, teleCache[sel.id]?"ready":"none");
     for(const c of DB.companies) for(const p of c.projects) for(const a of p.apps){
-      if(a.health){ if(force && pingCache[a.id]) pingCache[a.id].fresh=false; ping(a); }
+      if(a.health){ if(force && pingCache[a.id]) pingCache[a.id].fresh=false; ping(a, true); }   // auto: pula host privado (SSRF)
     }
   }finally{ _autoBusy=false; }
 }

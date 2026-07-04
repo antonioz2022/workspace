@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs --local",
+    "build": "node build.mjs",
+    "build:local": "node build.mjs --local",
     "smoke": "node smoke-test.mjs",
     "e2e": "playwright test"
   },

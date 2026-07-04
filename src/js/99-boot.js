@@ -9,7 +9,7 @@ async function autoRefreshAll(force){
     }
     if(sel) paintTele(sel.id, teleCache[sel.id]?"ready":"none");
     for(const c of DB.companies) for(const p of c.projects) for(const a of p.apps){
-      if(a.health){ if(force && pingCache[a.id]) pingCache[a.id].fresh=false; ping(a); }
+      if(a.health){ if(force && pingCache[a.id]) pingCache[a.id].fresh=false; ping(a, true); }   // auto: pula host privado (SSRF)
     }
   }finally{ _autoBusy=false; }
 }

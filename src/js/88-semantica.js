@@ -9,10 +9,15 @@ const EMB_MODEL="Xenova/paraphrase-multilingual-MiniLM-L12-v2";   // multilíngu
 const SEMIDX_KEY="cortex-semindex";       // cache local (IndexedDB)
 const SEMIDX_PATH=".cortex/semindex.json"; // versão portátil no repo (aparelho novo puxa em vez de reconstruir)
 const dismissedPairs=new Set();           // sugestões dispensadas nesta sessão
+const EMB_CDN="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
 let _embPipe=null, _emb=null, semIndex=null;
 function setEmbedder(fn){ _emb=fn; }   // testes/serviço hospedado: fn(texts:string[]) -> vetores normalizados
+// ⚠ SUPPLY-CHAIN (achado aberto, medium): o transformers.js vem de um CDN pinado e executa
+// na origem que guarda o PAT/chaves. O fix correto é isolar num Web Worker (sem acesso a
+// localStorage); pendente de verificação cross-browser antes de trocar (não arriscar quebrar
+// a busca). Mitigação atual: versão pinada (@2.17.2). Ver cortex-objetivo-retomada / TODO.
 async function localEmbedder(texts){
-  const mod=await import("https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2");
+  const mod=await import(EMB_CDN);
   if(mod.env){ mod.env.allowLocalModels=false; mod.env.useBrowserCache=true; }
   if(!_embPipe) _embPipe=await mod.pipeline("feature-extraction", EMB_MODEL);
   const out=[];
@@ -77,7 +82,7 @@ async function codeCorpus(onProgress){
       const text=await fetchRepoText(repo, path); if(!text) continue;
       const url=`https://github.com/${repo}/blob/HEAD/${path}`;
       for(const ch of chunkText(text)){ if(count>=CODE_MAX_CHUNKS_PER_REPO) break;
-        items.push({text:`[código · ${p.name} · ${path}] ${ch}`, scope:`código · ${p.name}`, file:path, url, goId:p.id, raw:ch}); count++; }
+        items.push({text:`[código · ${p.name} · ${path}] ${ch}`, scope:`código · ${p.name}`, file:path, url, goId:p.id, raw:ch, code:true}); count++; }
     }
     done++; if(onProgress) onProgress(done, projs.length, "code");
   }
@@ -100,9 +105,21 @@ async function buildSemIndex(onProgress, opts){
     if(onProgress) onProgress(Math.min(i+B, items.length), items.length);
   }
   semIndex={ model:EMB_MODEL, builtAt:Date.now(), repo:(typeof stateRepo==="function"?stateRepo():"")||"",
-    items:items.map((it,i)=>({scope:it.scope, file:it.file, goId:it.goId||null, url:it.url||null, raw:it.raw, vec:vecs[i]})) };
+    items:items.map((it,i)=>({scope:it.scope, file:it.file, goId:it.goId||null, url:it.url||null, raw:it.raw, code:!!it.code, vec:vecs[i]})) };
   await idbSet(SEMIDX_KEY, semIndex);
   return semIndex;
+}
+// o índice pode vir do REPO (colaborador com write) — é conteúdo de MENOR confiança. Higieniza:
+// goId só padrão seguro (senão null → item não clicável), url só http(s), campos viram string.
+function sanitizeSemIndex(idx){
+  if(!idx || !Array.isArray(idx.items)) return null;
+  idx.items=idx.items.filter(it=>it && Array.isArray(it.vec)).map(it=>({
+    scope:String(it.scope||""), file:String(it.file||""),
+    goId:(typeof it.goId==="string" && /^[A-Za-z0-9_-]{1,40}$/.test(it.goId))?it.goId:null,
+    url:(typeof safeUrl==="function"?safeUrl(it.url):"")||null, raw:String(it.raw||""), code:!!it.code,
+    vec:it.vec.map(n=>(typeof n==="number"&&isFinite(n))?n:0),
+  }));
+  return idx;
 }
 async function loadSemIndex(){
   if(semIndex) return semIndex;
@@ -113,14 +130,17 @@ async function loadSemIndex(){
     if(f){ try{ idx=JSON.parse(f.text); await idbSet(SEMIDX_KEY, idx); }catch(e){} }
   }
   if(idx && idx.model && idx.model!==EMB_MODEL) idx=null;   // modelo diferente → vetores incompatíveis, reconstruir
-  semIndex=idx||null;
+  semIndex = idx ? sanitizeSemIndex(idx) : null;            // conteúdo do repo pode ser malicioso → higieniza
   return semIndex;
 }
-/* publica o índice no repo (portátil entre aparelhos/contas). Fica em .cortex/ (fora das
-   listagens de brand/assets); é o mesmo conteúdo da brain + os vetores — nada de novo secreto. */
+/* publica o índice no repo (portátil entre aparelhos/contas). NÃO publica trechos derivados
+   de CÓDIGO (repos linkados que outros colaboradores podem não ter acesso — leriam docs
+   privados via o índice compartilhado); eles ficam SÓ local (IndexedDB). Publica só o
+   panorama da brain, que já é conteúdo do próprio repo compartilhado. */
 async function publishSemIndex(){
   if(!semIndex || !semIndex.items || typeof stateSyncOn!=="function" || !stateSyncOn() || typeof putBrainFile!=="function") return false;
-  try{ await putBrainFile(SEMIDX_PATH, JSON.stringify(semIndex), "brain: índice semântico"); return true; }
+  const pub={ model:semIndex.model, builtAt:semIndex.builtAt, repo:semIndex.repo, items:semIndex.items.filter(it=>!it.code) };
+  try{ await putBrainFile(SEMIDX_PATH, JSON.stringify(pub), "brain: índice semântico (panorama)"); return true; }
   catch(e){ return false; }
 }
 function cosine(a,b){ let s=0, n=Math.min(a.length,b.length); for(let i=0;i<n;i++) s+=a[i]*b[i]; return s; }   // vetores normalizados → dot

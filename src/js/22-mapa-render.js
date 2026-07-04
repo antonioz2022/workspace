@@ -53,7 +53,7 @@ function render(){
   applyCam();
   // pings
   DB.companies.forEach(c=>c.projects.forEach(p=>p.apps.forEach(a=>{
-    if(a.health && expanded.has(c.id) && expanded.has(p.id)) ping(a);
+    if(a.health && expanded.has(c.id) && expanded.has(p.id)) ping(a, true);   // auto: pula host privado (SSRF)
   })));
 }
 

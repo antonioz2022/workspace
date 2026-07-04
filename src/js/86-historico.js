@@ -71,7 +71,7 @@ async function cockpitRefreshAll(){
   if(el) el.insertAdjacentHTML("afterbegin",`<div class="dr-desc" id="ckLoading" style="color:var(--tx3)">atualizando telemetria + pings…</div>`);
   for(const c of DB.companies) for(const p of c.projects){
     try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
-    for(const a of p.apps) if(a.health){ if(pingCache[a.id]) pingCache[a.id].fresh=false; ping(a); }
+    for(const a of p.apps) if(a.health){ if(pingCache[a.id]) pingCache[a.id].fresh=false; ping(a, true); }   // auto: pula host privado (SSRF)
   }
   renderCockpit();
   renderActivityFeed();

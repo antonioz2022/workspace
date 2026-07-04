@@ -19,6 +19,20 @@ function jsq(v){ return String(v??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").
 // (localhost/IP privado continuam válidos de propósito: health-check de dev local é caso de uso real.)
 function safeUrl(u){ const s=(u==null?"":String(u)).trim(); if(!s) return "";
   try{ const p=new URL(s, location.href); return (p.protocol==="http:"||p.protocol==="https:") ? p.href : ""; }catch(e){ return ""; } }
+// host privado/loopback: um health-check SINCRONIZADO por um colaborador não deve ser
+// buscado AUTOMATICAMENTE (SSRF no navegador da vítima). Só verifica no clique explícito.
+function isPrivateHost(u){
+  try{ const h=new URL(u, location.href).hostname.toLowerCase();
+    return h==="localhost" || h==="::1" || h==="0.0.0.0" || h.endsWith(".local")
+      || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)
+      || /^169\.254\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h);
+  }catch(e){ return false; }
+}
+// coordenada segura: só número finito (senão null → o layout recalcula). Fecha o breakout de style="left:${x}".
+function safeCoord(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
+// repo GitHub estrito owner/repo (2 segmentos seguros, sem "..") — impede que `../` redirecione a API.
+function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(v) && !v.includes("..")) ? v : ""; }
+const NODE_STATUS=["ativo","pausado","concluido"], TODO_PRIOS=["alta","media","baixa"];
 // config LOCAL-ONLY: segredos + config de máquina que NUNCA vêm do repo/backup.
 // Ao aplicar estado que ENTRA (pull/restore/import) apagamos qualquer versão injetada
 // ANTES de restaurar a local — senão um mcpUrl/providers plantado no state.json
@@ -28,12 +42,18 @@ function scrubIncomingSettings(db){ if(db&&db.settings) for(const k of LOCAL_ONL
 function hardenDB(db){
   if(!db || !Array.isArray(db.companies)) return db;
   for(const c of db.companies){
-    c.id=safeId(c.id); if("img" in c) c.img=safeImg(c.img);
+    c.id=safeId(c.id); if("img" in c) c.img=safeImg(c.img); c.x=safeCoord(c.x); c.y=safeCoord(c.y);
     if(!Array.isArray(c.projects)) c.projects=[];
     for(const p of c.projects){
-      p.id=safeId(p.id); if("img" in p) p.img=safeImg(p.img);
-      if(Array.isArray(p.apps)) for(const a of p.apps) a.id=safeId(a.id);
+      p.id=safeId(p.id); if("img" in p) p.img=safeImg(p.img); p.x=safeCoord(p.x); p.y=safeCoord(p.y);
+      p.status=NODE_STATUS.indexOf(p.status)>=0?p.status:"ativo";                 // enum → some XSS via ${status}
+      if("github" in p) p.github=safeRepo(p.github);                              // owner/repo estrito → sem `../`
+      if(Array.isArray(p.apps)) for(const a of p.apps){ a.id=safeId(a.id); a.x=safeCoord(a.x); a.y=safeCoord(a.y); }
       if(Array.isArray(p.chats)) for(const ch of p.chats) ch.id=safeId(ch.id);
+      if(Array.isArray(p.todos)) for(const t of p.todos){
+        t.prio=TODO_PRIOS.indexOf(t.prio)>=0?t.prio:undefined;                    // enum → some injeção em class="tb-${prio}"
+        if(t.due!=null && !/^\d{4}-\d{2}-\d{2}$/.test(t.due)) t.due=undefined;
+      }
     }
   }
   if(db.settings && Array.isArray(db.settings.providers)) for(const pr of db.settings.providers) pr.id=safeId(pr.id);

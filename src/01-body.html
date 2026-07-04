@@ -155,8 +155,8 @@
     <button class="btn sm" onclick="askSuggest()" title="descobre relações do grafo por proximidade semântica">💡 Sugerir relações</button>
     <span id="askStatus" style="font-size:11.5px"></span>
   </div>
-  <label style="font-size:11.5px;color:var(--tx3);display:inline-flex;align-items:center;gap:6px;margin-bottom:10px" title="lê README, CLAUDE.md, ARCHITECTURE e specs recentes dos repos e indexa junto — a busca passa a alcançar o detalhe técnico, não só o panorama">
-    <input type="checkbox" id="askIncludeCode" checked> incluir docs do código (README, specs, CLAUDE.md) — alcança o detalhe técnico
+  <label style="font-size:11.5px;color:var(--tx3);display:inline-flex;align-items:flex-start;gap:6px;margin-bottom:10px" title="lê README/CLAUDE/ARCHITECTURE/specs dos repos com o SEU token e indexa junto. Fica SÓ neste aparelho (não é publicado no repo compartilhado), pra não expor docs de repo privado a colaboradores que não têm acesso a ele.">
+    <input type="checkbox" id="askIncludeCode"> <span>incluir docs do código (README, specs, CLAUDE.md) — alcança o detalhe técnico. <b>Lido com seu token e mantido só neste aparelho</b> (não sobe pro repo compartilhado).</span>
   </label>
   <div id="askResults"></div>
   <div id="askAnswer"></div>

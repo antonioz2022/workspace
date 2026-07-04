@@ -37,7 +37,7 @@ function openDrawer(f){
     body.innerHTML=`
       ${typeof resumeBlockHtml==="function"?resumeBlockHtml(p):""}
       <div class="chips" style="margin-bottom:12px">
-        <span class="chip" style="color:${p.status==='ativo'?'var(--ok)':(p.status==='pausado'?'var(--warn)':'var(--tx2)')}">● ${p.status||"ativo"}</span>
+        <span class="chip" style="color:${p.status==='ativo'?'var(--ok)':(p.status==='pausado'?'var(--warn)':'var(--tx2)')}">● ${esc(p.status||"ativo")}</span>
         <span class="chip">${p.apps.length} serviço(s)</span>
         <span class="chip cost">~US$ ${pjCost(p).toFixed(0)}/mês</span>
       </div>
@@ -150,7 +150,7 @@ function jumpTo(id){
 }
 
 /* ================= ping ================= */
-async function ping(a){
+async function ping(a, auto){
   const upd=(cls,txt)=>{
     pingCache[a.id]={cls,txt};
     const nd=document.getElementById("nd-"+a.id); if(nd) nd.className="sdot "+cls;
@@ -159,6 +159,9 @@ async function ping(a){
   if(pingCache[a.id] && pingCache[a.id].fresh) return upd(pingCache[a.id].cls, pingCache[a.id].txt);
   const target=safeUrl(a.health);   // só http(s): impede fetch em javascript:/data:/file: vindos de estado não confiável
   if(!target){ upd("bad","URL inválida"); if(pingCache[a.id]) pingCache[a.id].fresh=true; return; }
+  // health SINCRONIZADO apontando pra host privado/localhost NÃO é buscado automaticamente
+  // (SSRF do navegador da vítima). Só verifica quando o usuário abre o serviço (auto=false).
+  if(auto && isPrivateHost(target)){ upd("na","local — abra o serviço p/ verificar"); return; }   // não marca fresh: o clique explícito ainda pinga
   const t0=performance.now();
   try{
     const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),65000);
