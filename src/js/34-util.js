@@ -1,7 +1,14 @@
 /* ================= util ================= */
 function closeModals(){ document.querySelectorAll(".overlay").forEach(o=>o.classList.remove("open")); }
 document.querySelectorAll(".overlay").forEach(o=>o.addEventListener("click",e=>{ if(e.target===o) closeModals(); }));
-document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeModals(); closeDrawer(); } });
+document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeModals(); closeDrawer(); if(typeof closeMore==="function") closeMore(); } });
+
+/* menu "⋯ Mais" da barra superior (ações secundárias: cérebro, cockpit, backup, restaurar) */
+function toggleMore(e){ if(e) e.stopPropagation(); const m=document.getElementById("moreMenu"), b=document.getElementById("moreBtn");
+  const open=m.classList.toggle("show"); if(b) b.setAttribute("aria-expanded", open?"true":"false"); }
+function closeMore(){ const m=document.getElementById("moreMenu"); if(m) m.classList.remove("show");
+  const b=document.getElementById("moreBtn"); if(b) b.setAttribute("aria-expanded","false"); }
+document.addEventListener("click",e=>{ if(!(e.target.closest&&e.target.closest(".more-wrap"))) closeMore(); });
 
 function exportData(){
   // NÃO exporta segredos: token do GitHub, chaves de IA, mcpUrl e histórico do dock ficam de fora

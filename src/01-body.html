@@ -22,23 +22,30 @@
     </svg>
   </div>
   <div><h1>Córtex</h1><small>centro de comando</small></div>
-  <div class="sep"></div>
-  <div class="m"><b id="hudCos">0</b><span>empresas</span></div>
-  <div class="m"><b id="hudPjs">0</b><span>projetos</span></div>
-  <div class="m"><b id="hudCost">$0</b><span>/mês</span></div>
-  <div class="m"><b id="hudPend">0</b><span>pendências</span></div>
+  <div class="hud-stats">
+    <div class="sep"></div>
+    <div class="m"><b id="hudCos">0</b><span>empresas</span></div>
+    <div class="m"><b id="hudPjs">0</b><span>projetos</span></div>
+    <div class="m"><b id="hudCost">$0</b><span>/mês</span></div>
+    <div class="m"><b id="hudPend">0</b><span>pendências</span></div>
+  </div>
 </div>
 
 <div class="topright">
+  <button class="btn ic" onclick="openSearch()" title="Buscar em tudo (Ctrl+K)">🔎</button>
   <button class="btn" id="wsPill" onclick="openWsModal()" title="Trocar de workspace">🗂 Workspace</button>
-  <button class="btn" onclick="openSearch()" title="Buscar em tudo (Ctrl+K)">🔎 Buscar</button>
-  <button class="btn" id="brainBtn" onclick="connectBrainClick()">🧠 Conectar cérebro</button>
-  <button class="btn" onclick="openCockpit()">🎛 Cockpit</button>
-  <button class="btn" id="contasBtn" onclick="openAiModal()">⚙ Contas</button>
-  <button class="btn" onclick="exportData()">⬇ Backup</button>
-  <button class="btn" onclick="document.getElementById('importFile').click()">⬆ Restaurar</button>
+  <button class="btn" id="contasBtn" onclick="openAiModal()">⚙ <span class="lbl-hide">Contas</span></button>
+  <div class="more-wrap">
+    <button class="btn ic" id="moreBtn" onclick="toggleMore(event)" title="Mais opções" aria-haspopup="true" aria-expanded="false">⋯</button>
+    <div class="more-menu" id="moreMenu" role="menu">
+      <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
+      <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>
+      <button class="mm" role="menuitem" onclick="closeMore();exportData()">⬇ Backup</button>
+      <button class="mm" role="menuitem" onclick="closeMore();document.getElementById('importFile').click()">⬆ Restaurar</button>
+    </div>
+  </div>
+  <button class="btn primary" onclick="openCoModal()">＋ <span class="lbl-hide">Nova empresa</span></button>
   <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
-  <button class="btn primary" onclick="openCoModal()">＋ Nova empresa</button>
 </div>
 
 <div class="zoomctl">

@@ -120,7 +120,7 @@ test("backup baixado NÃO contém token nem chave de IA", async ({ page }) => {
   });
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "⬇ Backup" }).click(),
+    (async () => { await page.locator("#moreBtn").click(); await page.locator('.more-menu button:has-text("⬇ Backup")').click(); })(),
   ]);
   const file = await download.path();
   const txt = (await import("node:fs")).readFileSync(file, "utf8");
@@ -286,4 +286,33 @@ test("orgs: criar workspace pergunta o owner e cria na organização", async ({ 
   expect(orgPost).toMatchObject({ private: true });
   // a workspace conectou no repo da org
   await expect(page.locator("#wsState")).toContainText("acme-org/cortex-workspace");
+});
+
+test("layout: a barra superior NÃO sobrepõe o HUD em nenhum tamanho", async ({ page }) => {
+  await novaEmpresa(page, "Acme"); // popula HUD/mapa
+  await page.evaluate(() => { const d = (typeof dockState === "function") ? dockState() : null; if (d) { d.min = true; applyDockMin(); } }); // dock minimizado (estado real no estreito)
+  for (const w of [1440, 1200, 1000, 820, 640, 400, 360]) {
+    await page.setViewportSize({ width: w, height: 820 });
+    const r = await page.evaluate(() => {
+      const rc = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; };
+      const prim = document.querySelector(".topright .btn.primary").getBoundingClientRect();
+      const el = document.elementFromPoint(prim.left + prim.width / 2, prim.top + prim.height / 2);
+      const btn = document.querySelector(".topright .btn.primary");
+      return { hud: rc(".hud"), tr: rc(".topright"), primClickable: !!(el && (el === btn || btn.contains(el))) };
+    });
+    const overlapX = Math.max(0, Math.min(r.hud.right, r.tr.right) - Math.max(r.hud.left, r.tr.left));
+    const overlapY = Math.max(0, Math.min(r.hud.bottom, r.tr.bottom) - Math.max(r.hud.top, r.tr.top));
+    expect(overlapX > 2 && overlapY > 2, `HUD×barra sobrepõem em ${w}px`).toBe(false);
+    expect(r.primClickable, `botão + Nova empresa clicável em ${w}px`).toBe(true);
+  }
+});
+
+test("barra: menu ⋯ Mais abre e leva às ações secundárias", async ({ page }) => {
+  await page.locator("#moreBtn").click();
+  await expect(page.locator("#moreMenu")).toHaveClass(/show/);
+  await expect(page.locator("#moreMenu")).toContainText("Cockpit");
+  await expect(page.locator("#moreMenu")).toContainText("Backup");
+  await page.locator('.more-menu button:has-text("🎛 Cockpit")').click();
+  await expect(page.locator("#cockpitModal")).toHaveClass(/open/);
+  await expect(page.locator("#moreMenu")).not.toHaveClass(/show/); // fecha ao escolher
 });
