@@ -702,6 +702,11 @@ function save(){
   localStorage.setItem(LS_KEY+"-exp", JSON.stringify([...expanded]));
   if(typeof scheduleStatePush==="function") scheduleStatePush();
 }
+// só a VISÃO (câmera/expandidos) — não toca no DB nem dispara sync remoto
+function saveView(){
+  localStorage.setItem(LS_KEY+"-cam", JSON.stringify(cam));
+  localStorage.setItem(LS_KEY+"-exp", JSON.stringify([...expanded]));
+}
 const uid=()=>Math.random().toString(36).slice(2,9);
 const esc=s=>(s??"").toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
@@ -943,7 +948,7 @@ vp.addEventListener("pointercancel", e=>{
 });
 vp.addEventListener("pointerup", e=>{
   activePtrs.delete(e.pointerId);
-  if(pinchState){ if(activePtrs.size<2){ pinchState=null; save(); } return; }
+  if(pinchState){ if(activePtrs.size<2){ pinchState=null; saveView(); } return; }
   if(dragState){
     const id=dragState.item.id ? (dragState.el.dataset.id) : null;
     if(!moved && id) handleClick(id, dragState.el.dataset.type);
@@ -951,7 +956,7 @@ vp.addEventListener("pointerup", e=>{
     dragState=null;
   }else if(panState){
     panState=null; vp.classList.remove("panning");
-    save();
+    saveView();
   }
 });
 vp.addEventListener("wheel", e=>{
@@ -966,7 +971,7 @@ function zoomAt(px,py,f){
   cam.x = px - (px-cam.x)*k;
   cam.y = py - (py-cam.y)*k;
   cam.z = nz;
-  applyCam(); save();
+  applyCam(); saveView();
 }
 function zoomBy(d){ zoomAt(innerWidth/2, innerHeight/2, 1+d); }
 function fitView(){
@@ -1376,9 +1381,13 @@ document.querySelectorAll(".overlay").forEach(o=>o.addEventListener("click",e=>{
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"){ closeModals(); closeDrawer(); } });
 
 function exportData(){
-  const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
+  // NÃO exporta segredos: token do GitHub, chaves de IA, mcpUrl e histórico do dock ficam de fora
+  const clean = (typeof sanitizeStateForSync==="function") ? sanitizeStateForSync() : DB;
+  const blob=new Blob([JSON.stringify(clean,null,2)],{type:"application/json"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   a.download="workspace-dados.json"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  if(typeof uiToast==="function") uiToast("Backup salvo. Por segurança, o token do GitHub e as chaves de IA não vão no arquivo.","ok");
 }
 function importData(ev){
   const f=ev.target.files[0]; if(!f) return;
@@ -1912,7 +1921,8 @@ async function readSSE(resp, onEvent){
       if(!s.startsWith("data:")) continue;
       const payload=s.slice(5).trim();
       if(payload==="[DONE]") return;
-      try{ onEvent(JSON.parse(payload)); }catch(e){}
+      let obj; try{ obj=JSON.parse(payload); }catch(e){ continue; } // só engole linha malformada…
+      onEvent(obj);   // …NÃO o erro lançado pelo callback (ex.: evento "error" da API) → propaga
     }
   }
 }
@@ -2112,13 +2122,32 @@ ${runbookBlock(p)}
 *(gerado pelo painel Workspace — edite pelo painel, não aqui)*
 `;
 }
-const serTodos=p=>`# Pendências — ${p.name}\n\n`+
-  (p.todos||[]).map(t=>`- [${t.done?"x":" "}] ${t.t}`).join("\n")+"\n";
+/* serializa preservando o texto MULTILINHA de cada item (continuações já vêm com o \n
+   e a indentação embutidos em t.t), a seção (## …) e o espaçamento entre grupos (gap). */
+const serTodos=p=>{
+  let out=`# Pendências — ${p.name}\n\n`, lastSec=null, first=true;
+  for(const t of (p.todos||[])){
+    const sec=t.section||"";
+    if(sec!==lastSec){ if(sec){ if(!first) out+="\n"; out+=`## ${sec}\n`; } lastSec=sec; }
+    if(t.gap && !first) out+="\n";
+    out+=`- [${t.done?"x":" "}] ${t.t}\n`;
+    first=false;
+  }
+  return out;
+};
+/* parser lossless: item = 1ª linha "- [ ] …" + linhas de continuação indentadas (guardadas
+   em t com o \n original); cabeçalhos ## viram section; linhas em branco viram "gap". Assim
+   o round-trip NÃO trunca as pendências multilinha escritas por uma IA no repo. */
 function parseTodos(text){
-  const out=[];
+  const out=[]; let cur=null, section="", pendingGap=false;
   for(const ln of text.split("\n")){
-    const m=ln.match(/^\s*[-*] \[( |x|X)\] (.+)$/);
-    if(m) out.push({t:m[2].trim(), done:m[1].toLowerCase()==="x"});
+    const mItem=ln.match(/^\s*[-*] \[( |x|X)\]\s?(.*)$/);
+    if(mItem){ cur={t:mItem[2], done:mItem[1].toLowerCase()==="x", section, gap:pendingGap}; out.push(cur); pendingGap=false; continue; }
+    const mHead=ln.match(/^(#{1,6})\s+(.*)$/);
+    if(mHead){ if(mHead[1].length>1){ section=mHead[2].trim(); } cur=null; pendingGap=false; continue; } // # (H1 título) é ignorado; ##+ vira seção
+    if(ln.trim()===""){ pendingGap=true; cur=null; continue; }
+    if(cur){ cur.t += "\n"+ln; continue; } // linha de continuação do item atual (mantém indentação)
+    // texto solto sem item/cabeçalho (não ocorre nas pendências normais) → ignora, como o parser antigo
   }
   return out;
 }
@@ -2585,7 +2614,15 @@ function stateRepo(){ const r=((DB.settings||{}).stateRepo||"").trim(); return /
 function stateSyncOn(){ return !!(stateRepo() && (DB.settings||{}).githubToken); }
 function sanitizeStateForSync(){
   const clone=JSON.parse(JSON.stringify(DB));
-  if(clone.settings){ delete clone.settings.githubToken; (clone.settings.providers||[]).forEach(p=>{ delete p.apiKey; }); }
+  if(clone.settings){
+    // segredos e config de máquina NÃO vão pro repo: o token, e os PROVIDERS inteiros
+    // (baseUrl/mcpUrl poderiam ser trocados por um Editor malicioso e vazar a chave local
+    // pra outro domínio), além do histórico do dock. Ficam só neste navegador.
+    delete clone.settings.githubToken;
+    delete clone.settings.providers;
+    delete clone.settings.mcpUrl;
+    delete clone.settings.dock;
+  }
   return clone;
 }
 function stateBadge(txt, ok){
@@ -2608,17 +2645,23 @@ async function ghPutFile(repo,path,text,sha,msg){
     throw new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
   return r.json();
 }
+let lastPushedDbStr=null;
 async function pushState(){
   if(!stateSyncOn() || stateApplying || statePushing) return;
+  const dbClean=sanitizeStateForSync(), dbStr=JSON.stringify(dbClean);
+  // conteúdo idêntico ao último push → NÃO empurra (evita que pan/zoom ou re-render
+  // carimbem updatedAt novo e sobrescrevam edições reais de outro aparelho)
+  if(dbStr===lastPushedDbStr) return;
   statePushing=true; stateBadge("☁ enviando…");
   const who=localStorage.getItem(LS_KEY+"-ghlogin")||navigator.userAgent.slice(0,40);
   let lastErr=null;
   try{
     for(let tent=1; tent<=2; tent++){
       try{
-        const payload={updatedAt:Date.now(), device:who, db:sanitizeStateForSync()};
+        const payload={updatedAt:Date.now(), device:who, db:dbClean};
         const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null); // re-lê o sha a cada tentativa
         await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
+        lastPushedDbStr=dbStr;
         localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
         const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
         statePushing=false; return;
@@ -2648,15 +2691,20 @@ async function pullState({force=false}={}){
   if(!force && !(payload.updatedAt>last)) return false;
   stateApplying=true;
   try{
-    const keepTok=(DB.settings||{}).githubToken;
-    const keepRepo=(DB.settings||{}).stateRepo;
-    const keepKeys={}; ((DB.settings||{}).providers||[]).forEach(p=>{ if(p.apiKey) keepKeys[p.id]=p.apiKey; });
+    // preserva TUDO que é local (não vem do repo): token, repo, providers (com as chaves),
+    // mcpUrl e dock. Assim ninguém troca a baseUrl no estado remoto pra roubar a chave.
+    const local=(DB.settings||{});
+    const keepTok=local.githubToken, keepRepo=local.stateRepo,
+          keepProviders=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
     DB=migrate(payload.db);
     DB.settings=DB.settings||{};
     if(keepTok) DB.settings.githubToken=keepTok;
     if(keepRepo) DB.settings.stateRepo=keepRepo;
-    (DB.settings.providers||[]).forEach(p=>{ if(keepKeys[p.id]) p.apiKey=keepKeys[p.id]; });
+    if(keepProviders!==undefined) DB.settings.providers=keepProviders;
+    if(keepMcp!==undefined) DB.settings.mcpUrl=keepMcp;
+    if(keepDock!==undefined) DB.settings.dock=keepDock;
     save();
+    lastPushedDbStr=JSON.stringify(sanitizeStateForSync());   // acabou de aplicar o remoto → não re-empurra idêntico
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
     const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
@@ -2924,19 +2972,22 @@ async function flushBrainPush(){
   const cids=[...queuedBrainCids]; queuedBrainCids.clear();
   try{
     brainBadge("☁ salvando no cérebro…");
+    let touched=false;
     for(const pid of pids){
       const f=findNode(pid); if(!f||f.type!=="pj") continue;
       const d=brainDirOf(f.co,f.pj);
       await putBrainFile(`${d}/memoria.md`, f.pj.context||`# Memória — ${f.pj.name}\n`, "brain: memória — "+f.pj.name);
       await putBrainFile(`${d}/pendencias.md`, serTodos(f.pj), "brain: pendências — "+f.pj.name);
       await putBrainFile(`${d}/projeto.md`, genProjetoMd(f.co,f.pj), "brain: projeto — "+f.pj.name);
+      f.pj._memDirty=false; f.pj._todoDirty=false; touched=true;   // ✅ gravou → limpa (senão pullBrainRemote fica bloqueado pra sempre)
     }
     for(const cid of cids){
       const c=DB.companies.find(x=>x.id===cid); if(!c) continue;
       await putBrainFile(`brain/${slug(c.name)}/empresa.md`, genEmpresaMd(c), "brain: empresa — "+c.name);
-      c._coDirty=false;
+      c._coDirty=false; touched=true;
     }
     await putBrainFile("INDEX.md", genIndexMd(), "brain: INDEX atualizado");
+    if(touched) save();   // persiste as flags limpas
     brainBadge("☁ salvo no cérebro "+hhmm(), true);
   }catch(e){
     pids.forEach(id=>queuedBrainPids.add(id)); cids.forEach(id=>queuedBrainCids.add(id));
