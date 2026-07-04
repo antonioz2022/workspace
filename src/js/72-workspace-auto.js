@@ -41,12 +41,25 @@ async function checkWsAdmin(){
 }
 async function createWorkspace(){
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub primeiro.","warn"); return; }
-  const name=await uiPrompt({title:"Criar workspace", message:"Vou criar um repositório PRIVADO no seu GitHub pra guardar tudo. Nome:", value:"cortex-workspace", placeholder:"cortex-workspace", okLabel:"🚀 Criar"});
+  const name=await uiPrompt({title:"Criar workspace", message:"Vou criar um repositório PRIVADO pra guardar tudo (empresas, projetos, brain). Nome:", value:"cortex-workspace", placeholder:"cortex-workspace", okLabel:"Próximo →"});
   if(!name) return;
+  // onde criar: sua conta ou uma organização (times / SSO / permissões finas = enterprise)?
+  let owner="";
+  const orgs=await ghGet("/user/orgs?per_page=50").catch(()=>null);
+  if(Array.isArray(orgs) && orgs.length){
+    const login=localStorage.getItem(LS_KEY+"-ghlogin")||"você";
+    const buttons=[{label:"👤 "+login+" (sua conta)", value:"", kind:"primary"}]
+      .concat(orgs.slice(0,6).map(o=>({label:"🏢 "+o.login, value:o.login})))
+      .concat([{label:"Cancelar", value:"__cancel__"}]);
+    owner=await uiDialog({title:"Onde criar a workspace?", message:"Numa organização você ganha times, SSO e permissões finas (enterprise); na sua conta é mais simples. Dá pra transferir depois.", buttons, cancelValue:"__cancel__"});
+    if(owner==="__cancel__") return;
+  }
+  const url = owner ? `https://api.github.com/orgs/${owner}/repos` : "https://api.github.com/user/repos";
   try{
-    const r=await fetch("https://api.github.com/user/repos",{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
+    const r=await fetch(url,{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
       body:JSON.stringify({name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})});
-    if(r.status===422){ uiToast("Já existe um repo com esse nome. Tente outro.","warn"); return; }
+    if(r.status===422){ uiToast("Já existe um repo com esse nome"+(owner?(" na org "+owner):"")+". Tente outro.","warn"); return; }
+    if(r.status===403){ uiToast("Sem permissão pra criar"+(owner?(" na org "+owner+" — você precisa do papel/scope certo lá"):"")+".","warn"); return; }
     if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||("HTTP "+r.status)); }
     const j=await r.json();
     setStateRepo(j.full_name);

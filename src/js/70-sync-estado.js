@@ -140,10 +140,40 @@ async function pullState({force=false}={}){
     lastPushedDbStr=JSON.stringify(sanitizeStateForSync());   // acabou de aplicar o remoto → não re-empurra idêntico
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
+    if(typeof hideCollab==="function") hideCollab();   // aplicou → some o aviso de novidade
     const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
   }finally{ stateApplying=false; }
   return true;
 }
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
+  collabSeenAt=0; if(typeof hideCollab==="function") hideCollab();   // troca de workspace zera o aviso
   stateBadge(stateSyncOn()?"☁ sync ligada: salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
+
+/* ===== colaboração viva: avisa quando alguém (ou outro aparelho seu) atualiza a workspace =====
+   Enquanto o app está aberto, checa o state.json de tempos em tempos e mostra um banner
+   NÃO-intrusivo em vez de aplicar de surpresa. Clicar "Atualizar" chama o pull (que ainda
+   mostra o diff se você tiver edição local). É leve: só um GET do arquivo pequeno. */
+let collabTimer=null, collabSeenAt=0;
+function startCollabPoll(){ clearInterval(collabTimer); collabTimer=setInterval(collabTick, 45000); }
+function collabTick(){ if(document.visibilityState==="visible") checkRemoteChanges().catch(()=>{}); }
+async function checkRemoteChanges(){
+  if(!stateSyncOn() || statePushing || stateApplying) return;
+  const f=await ghGetFile(stateRepo(), STATE_PATH).catch(()=>null); if(!f) return;
+  let payload; try{ payload=JSON.parse(f.text); }catch(e){ return; }
+  if(!payload || !payload.updatedAt) return;
+  const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
+  if(payload.updatedAt>last && payload.updatedAt>collabSeenAt){
+    collabSeenAt=payload.updatedAt;
+    showCollabBanner(String(payload.device||"alguém").slice(0,24));
+  }
+}
+function showCollabBanner(who){
+  const el=document.getElementById("collabBanner"); if(!el) return;
+  el.innerHTML=`<span>🔄 <b>${esc(who)}</b> atualizou a workspace</span>
+    <button class="btn sm primary" onclick="applyCollab()">Atualizar</button>
+    <button class="btn sm ghost" onclick="hideCollab()" title="ver depois">✕</button>`;
+  el.classList.add("show");
+}
+function hideCollab(){ const el=document.getElementById("collabBanner"); if(el) el.classList.remove("show"); }
+async function applyCollab(){ hideCollab(); await pullState({force:false}); }
 

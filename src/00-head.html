@@ -176,6 +176,11 @@
   .mapfilter .fc.on{ background:linear-gradient(135deg,#7C4FF0,#9D6BFF); border-color:transparent; color:#fff; box-shadow:0 6px 18px rgba(124,79,240,.35); }
   .mapfilter .fc .n{ opacity:.72; font-weight:700; }
   .node.dimmed{ opacity:.15; filter:grayscale(.7); pointer-events:none; }
+  .collab-banner{ position:fixed; top:18px; left:50%; transform:translateX(-50%) translateY(-140%); z-index:19;
+    display:none; align-items:center; gap:10px; background:linear-gradient(180deg,var(--glass),rgba(16,14,26,.97));
+    border:1px solid var(--line2); border-left:3px solid var(--ac); border-radius:13px; padding:8px 10px 8px 14px;
+    box-shadow:0 16px 44px rgba(0,0,0,.5); font-size:13px; color:var(--tx); transition:transform .28s cubic-bezier(.2,1.2,.4,1); }
+  .collab-banner.show{ display:flex; transform:translateX(-50%) translateY(0); }
 
   /* ===== drawer ===== */
   .drawer{

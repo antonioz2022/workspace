@@ -176,6 +176,11 @@
   .mapfilter .fc.on{ background:linear-gradient(135deg,#7C4FF0,#9D6BFF); border-color:transparent; color:#fff; box-shadow:0 6px 18px rgba(124,79,240,.35); }
   .mapfilter .fc .n{ opacity:.72; font-weight:700; }
   .node.dimmed{ opacity:.15; filter:grayscale(.7); pointer-events:none; }
+  .collab-banner{ position:fixed; top:18px; left:50%; transform:translateX(-50%) translateY(-140%); z-index:19;
+    display:none; align-items:center; gap:10px; background:linear-gradient(180deg,var(--glass),rgba(16,14,26,.97));
+    border:1px solid var(--line2); border-left:3px solid var(--ac); border-radius:13px; padding:8px 10px 8px 14px;
+    box-shadow:0 16px 44px rgba(0,0,0,.5); font-size:13px; color:var(--tx); transition:transform .28s cubic-bezier(.2,1.2,.4,1); }
+  .collab-banner.show{ display:flex; transform:translateX(-50%) translateY(0); }
 
   /* ===== drawer ===== */
   .drawer{
@@ -393,6 +398,7 @@
   <button onclick="fitView()" title="centralizar">⌂</button>
 </div>
 <div class="mapfilter" id="mapFilter"></div>
+<div class="collab-banner" id="collabBanner"></div>
 <div class="helper">arraste o fundo pra navegar · scroll pra zoom · clique nos nós pra expandir · arraste um nó pra reposicionar</div>
 
 <!-- DRAWER -->
@@ -589,8 +595,9 @@
       <button class="btn sm" onclick="renderMembers()">🔄</button>
     </div>
     <p style="color:var(--tx3); font-size:11.5px; margin-top:10px">
-      🏢 <b>Enterprise:</b> crie uma Organization no GitHub e transfira o repo da brain para ter times, SSO e permissões finas.
-      O Córtex funciona igual (só muda o owner/repo). Bônus: na org, membros podem usar token fine-grained.
+      🏢 <b>Organização / enterprise:</b> a workspace pode viver numa GitHub Organization (times, SSO, permissões finas).
+      Ao <b>🚀 Criar</b> uma workspace o Córtex já pergunta onde criar. O app funciona igual (só muda o owner/repo).
+      Passo a passo em <a href="ORGANIZATIONS.md" target="_blank" rel="noopener" style="color:var(--ac2)">ORGANIZATIONS.md</a>.
     </p>
   </div>
   <div class="modal-foot">
@@ -2891,12 +2898,42 @@ async function pullState({force=false}={}){
     lastPushedDbStr=JSON.stringify(sanitizeStateForSync());   // acabou de aplicar o remoto → não re-empurra idêntico
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
+    if(typeof hideCollab==="function") hideCollab();   // aplicou → some o aviso de novidade
     const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
   }finally{ stateApplying=false; }
   return true;
 }
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
+  collabSeenAt=0; if(typeof hideCollab==="function") hideCollab();   // troca de workspace zera o aviso
   stateBadge(stateSyncOn()?"☁ sync ligada: salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
+
+/* ===== colaboração viva: avisa quando alguém (ou outro aparelho seu) atualiza a workspace =====
+   Enquanto o app está aberto, checa o state.json de tempos em tempos e mostra um banner
+   NÃO-intrusivo em vez de aplicar de surpresa. Clicar "Atualizar" chama o pull (que ainda
+   mostra o diff se você tiver edição local). É leve: só um GET do arquivo pequeno. */
+let collabTimer=null, collabSeenAt=0;
+function startCollabPoll(){ clearInterval(collabTimer); collabTimer=setInterval(collabTick, 45000); }
+function collabTick(){ if(document.visibilityState==="visible") checkRemoteChanges().catch(()=>{}); }
+async function checkRemoteChanges(){
+  if(!stateSyncOn() || statePushing || stateApplying) return;
+  const f=await ghGetFile(stateRepo(), STATE_PATH).catch(()=>null); if(!f) return;
+  let payload; try{ payload=JSON.parse(f.text); }catch(e){ return; }
+  if(!payload || !payload.updatedAt) return;
+  const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
+  if(payload.updatedAt>last && payload.updatedAt>collabSeenAt){
+    collabSeenAt=payload.updatedAt;
+    showCollabBanner(String(payload.device||"alguém").slice(0,24));
+  }
+}
+function showCollabBanner(who){
+  const el=document.getElementById("collabBanner"); if(!el) return;
+  el.innerHTML=`<span>🔄 <b>${esc(who)}</b> atualizou a workspace</span>
+    <button class="btn sm primary" onclick="applyCollab()">Atualizar</button>
+    <button class="btn sm ghost" onclick="hideCollab()" title="ver depois">✕</button>`;
+  el.classList.add("show");
+}
+function hideCollab(){ const el=document.getElementById("collabBanner"); if(el) el.classList.remove("show"); }
+async function applyCollab(){ hideCollab(); await pullState({force:false}); }
 
 /* ===== 🚀 Workspace no automático: criar/conectar/apagar pelo Córtex ===== */
 function renderWorkspaceState(){
@@ -2941,12 +2978,25 @@ async function checkWsAdmin(){
 }
 async function createWorkspace(){
   if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub primeiro.","warn"); return; }
-  const name=await uiPrompt({title:"Criar workspace", message:"Vou criar um repositório PRIVADO no seu GitHub pra guardar tudo. Nome:", value:"cortex-workspace", placeholder:"cortex-workspace", okLabel:"🚀 Criar"});
+  const name=await uiPrompt({title:"Criar workspace", message:"Vou criar um repositório PRIVADO pra guardar tudo (empresas, projetos, brain). Nome:", value:"cortex-workspace", placeholder:"cortex-workspace", okLabel:"Próximo →"});
   if(!name) return;
+  // onde criar: sua conta ou uma organização (times / SSO / permissões finas = enterprise)?
+  let owner="";
+  const orgs=await ghGet("/user/orgs?per_page=50").catch(()=>null);
+  if(Array.isArray(orgs) && orgs.length){
+    const login=localStorage.getItem(LS_KEY+"-ghlogin")||"você";
+    const buttons=[{label:"👤 "+login+" (sua conta)", value:"", kind:"primary"}]
+      .concat(orgs.slice(0,6).map(o=>({label:"🏢 "+o.login, value:o.login})))
+      .concat([{label:"Cancelar", value:"__cancel__"}]);
+    owner=await uiDialog({title:"Onde criar a workspace?", message:"Numa organização você ganha times, SSO e permissões finas (enterprise); na sua conta é mais simples. Dá pra transferir depois.", buttons, cancelValue:"__cancel__"});
+    if(owner==="__cancel__") return;
+  }
+  const url = owner ? `https://api.github.com/orgs/${owner}/repos` : "https://api.github.com/user/repos";
   try{
-    const r=await fetch("https://api.github.com/user/repos",{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
+    const r=await fetch(url,{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
       body:JSON.stringify({name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})});
-    if(r.status===422){ uiToast("Já existe um repo com esse nome. Tente outro.","warn"); return; }
+    if(r.status===422){ uiToast("Já existe um repo com esse nome"+(owner?(" na org "+owner):"")+". Tente outro.","warn"); return; }
+    if(r.status===403){ uiToast("Sem permissão pra criar"+(owner?(" na org "+owner+" — você precisa do papel/scope certo lá"):"")+".","warn"); return; }
     if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||("HTTP "+r.status)); }
     const j=await r.json();
     setStateRepo(j.full_name);
@@ -3872,6 +3922,7 @@ wsBoot();
 if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
 ensureBrain();
 if(stateSyncOn()) setTimeout(()=>pullState().catch(()=>{}), 600);
+if(typeof startCollabPoll==="function") startCollabPoll();   // colaboração viva: avisa quando alguém atualiza
 { const d=patDays(); const b=document.getElementById("contasBtn"); if(b && d!==null && d<10) b.textContent="⚙ Contas ⚠"; }
 // PWA: registra o service worker (só quando servido por http/https; abrir de file:// segue funcionando)
 if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){

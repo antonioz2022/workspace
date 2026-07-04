@@ -225,3 +225,65 @@ test("membros: fluxo de convite completo com API mockada", async ({ page }) => {
   await expect(page.locator("#membersList")).toContainText("convite pendente");
   await expect(page.locator("#membersList")).toContainText("@fulano");
 });
+
+test("colaboração viva: banner avisa quando o remoto muda e o Atualizar aplica", async ({ page }) => {
+  const REPO = "antonioz2022/ws-teste";
+  const remote = { updatedAt: 9999999999999, device: "colega",
+    db: { version: 5, companies: [{ id: "rc", name: "Empresa Remota", emoji: "🛰", x: 0, y: 0, projects: [] }], settings: {} } };
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/contents/state.json")) {
+      const content = Buffer.from(JSON.stringify(remote)).toString("base64");
+      return route.fulfill({ json: { sha: "s1", content } });
+    }
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {};
+    DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    save();
+    localStorage.setItem("workspace-map-v3-syncat", "1"); // local desatualizado
+  });
+  await page.evaluate(() => checkRemoteChanges());
+  await expect(page.locator("#collabBanner")).toHaveClass(/show/);
+  await expect(page.locator("#collabBanner")).toContainText("colega");
+  await page.locator('#collabBanner button:has-text("Atualizar")').click();
+  await expect(page.locator("#collabBanner")).not.toHaveClass(/show/);
+  await expect(page.locator(".node.co .tag", { hasText: "Empresa Remota" })).toBeVisible();
+});
+
+test("orgs: criar workspace pergunta o owner e cria na organização", async ({ page }) => {
+  let orgPost = null;
+  await page.route("https://workspace-mcp.**", (r) => r.fulfill({ status: 401, json: {} }));
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url(), method = route.request().method();
+    if (url.includes("/user/orgs")) return route.fulfill({ json: [{ login: "acme-org" }] });
+    if (/\/user(\?|$)/.test(url)) return route.fulfill({ json: { login: "antonioz2022" } });
+    if (method === "POST" && url.includes("/orgs/acme-org/repos")) {
+      orgPost = JSON.parse(route.request().postData() || "{}");
+      return route.fulfill({ status: 201, json: { full_name: "acme-org/cortex-workspace" } });
+    }
+    if (url.includes("/repos/acme-org/cortex-workspace")) return route.fulfill({ json: { full_name: "acme-org/cortex-workspace", permissions: { admin: true, push: true } } });
+    if (url.includes("/contents/")) {
+      if (method === "GET") return route.fulfill({ status: 404, json: {} });
+      return route.fulfill({ status: 201, json: { content: { sha: "x" } } });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock";
+    localStorage.setItem("workspace-map-v3-ghlogin", "antonioz2022");
+  });
+  await page.getByRole("button", { name: "⚙ Contas" }).click();
+  await page.locator("#wsState").getByRole("button", { name: "🚀 Criar minha workspace" }).click();
+  // 1) nome
+  await page.locator(".ui-dlg input").fill("cortex-workspace");
+  await page.locator('.ui-dlg button:has-text("Próximo")').click();
+  // 2) onde criar → escolhe a org
+  await expect(page.locator(".ui-dlg")).toContainText("Onde criar a workspace?");
+  await page.locator('.ui-dlg button:has-text("acme-org")').click();
+  await expect.poll(() => orgPost).not.toBeNull();
+  expect(orgPost).toMatchObject({ private: true });
+  // a workspace conectou no repo da org
+  await expect(page.locator("#wsState")).toContainText("acme-org/cortex-workspace");
+});
