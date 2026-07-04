@@ -585,6 +585,45 @@ test("reconciliador: sinaliza memória defasada quando o repo andou depois da ú
   await expect(page.locator('#memSyncBanner button:has-text("Gerar atualização pra IA")')).toBeVisible();
 });
 
+test("💾 rascunho de checkpoint: commits órfãos viram sessão na memória com 1 clique (sem IA)", async ({ page }) => {
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/commits") && url.includes("memoria.md"))
+      return route.fulfill({ json: [{ commit: { author: { date: "2020-01-01T00:00:00Z" } } }] });
+    if (url.includes("/repos/owner/repo/commits"))
+      return route.fulfill({ json: [
+        { sha: "aaaaaa1234567", commit: { message: "feat: webhook direto ligado\n\ncorpo", author: { date: "2030-01-02T00:00:00Z" } } },
+        { sha: "bbbbbb7654321", commit: { message: "fix: <b>bug</b> do parser", author: { date: "2030-01-01T00:00:00Z" } } },
+      ] });
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    const p = DB.companies[0].projects[0]; p.github = "owner/repo"; p.context = "# Memória — Site\n\n🎯 Onde parei: coisa antiga\n\n## Estado\ntexto que fica\n"; save();
+    sel = { id: p.id, co: DB.companies[0], pj: p, type: "pj" }; openDrawer(findNode(p.id));
+  });
+  await expect(page.locator('#memSyncBanner button:has-text("Rascunho de checkpoint")')).toBeVisible({ timeout: 6000 });
+  await page.locator('#memSyncBanner button:has-text("Rascunho de checkpoint")').click();
+  // diálogo pré-preenchido com os commits (via .value — mensagem de commit NÃO vira HTML)
+  const dlg = page.locator(".ui-dlg");
+  await expect(dlg.locator(".mem-draft-next")).toHaveValue(/revisar e continuar do último commit: feat: webhook direto ligado/);
+  await expect(dlg.locator(".mem-draft-body")).toHaveValue(/`aaaaaa1` 2030-01-02: feat: webhook direto ligado/);
+  await expect(dlg.locator(".mem-draft-body")).toHaveValue(/fix: <b>bug<\/b> do parser/);
+  expect(await dlg.locator("b").count(), "msg de commit não injeta HTML no diálogo").toBe(0);
+  await dlg.locator('button:has-text("Salvar na memória")').click();
+  await expect(page.locator(".ui-toast")).toContainText("Checkpoint salvo");
+  const after = await page.evaluate(() => DB.companies[0].projects[0].context);
+  expect(after).toContain("🎯 Onde parei: revisar e continuar do último commit: feat: webhook direto ligado");
+  expect(after).toContain("## Sessão (");
+  expect(after).toContain("- `aaaaaa1` 2030-01-02: feat: webhook direto ligado");
+  expect(after).not.toContain("Onde parei: coisa antiga");   // o 🎯 antigo foi substituído
+  expect(after).toContain("texto que fica");                 // o corpo da memória é preservado
+  // banner some (cache otimista) — o aviso de defasada não persiste após aceitar
+  await expect(page.locator("#memSyncBanner")).not.toContainText("defasada");
+});
+
 test("grafo de conhecimento: relação criada pela UI aparece no drawer, no mapa, no GRAFO.md e sobrevive ao sync", async ({ page }) => {
   // 2 empresas + 2 projetos direto no estado (posições distintas) — evita flakiness de clique/sobreposição
   await page.evaluate(() => {

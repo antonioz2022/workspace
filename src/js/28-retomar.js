@@ -50,13 +50,9 @@ function resumeBlockHtml(p){
 }
 /* 💾 Salvar progresso: 1 clique grava um checkpoint na memória do projeto (MESMO formato da
    tool MCP checkpoint) — SEM depender de IA. Pega o "onde parei" auto-derivado + nota opcional. */
-function applyProgress(p, note){
-  const r=resumeState(p);
-  const nextLine=((note||"").trim()) || r.headline;
-  const date=todayStr();
-  const bodyLines=[]; if((note||"").trim()) bodyLines.push((note||"").trim());
-  for(const l of r.lines) bodyLines.push("- "+l);
-  const session=`## Sessão (${date})\n${bodyLines.length?bodyLines.join("\n"):"(checkpoint manual)"}\n`;
+function memInsertSession(p, sessionBody, nextLine){
+  // cirurgia compartilhada (💾 Salvar e rascunho de commits): título → 🎯 novo → sessão datada → corpo
+  const session=`## Sessão (${todayStr()})\n${sessionBody}\n`;
   let title=`# Memória — ${p.name}`, gotTitle=false; const rest=[];
   for(const ln of (p.context||"").split("\n")){
     if(!gotTitle && /^#\s+/.test(ln)){ title=ln.trim(); gotTitle=true; continue; }
@@ -66,6 +62,13 @@ function applyProgress(p, note){
   const body=rest.join("\n").replace(/^\n+/,"");
   p.context=(`${title}\n\n🎯 Onde parei: ${nextLine.replace(/\s+/g," ").trim()}\n\n${session}\n${body}`).replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
   p.focus="";   // o "onde parei" agora vive na memória (linha 🎯) — evita fonte duplicada
+}
+function applyProgress(p, note){
+  const r=resumeState(p);
+  const nextLine=((note||"").trim()) || r.headline;
+  const bodyLines=[]; if((note||"").trim()) bodyLines.push((note||"").trim());
+  for(const l of r.lines) bodyLines.push("- "+l);
+  memInsertSession(p, bodyLines.length?bodyLines.join("\n"):"(checkpoint manual)", nextLine);
 }
 async function saveProgress(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
