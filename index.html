@@ -2865,6 +2865,7 @@ async function hydrateFiles(f){
     <div class="mini-item" style="cursor:default">
       <span class="mi-emoji" id="fprev-${i}" style="width:34px;height:34px;border-radius:8px;background:rgba(0,0,0,.3);display:grid;place-items:center;overflow:hidden">${IMG_RE.test(x.name)?"🖼":"📄"}</span>
       <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(x.name)}<span style="color:var(--tx3);font-size:11px"> · ${fmtSize(x.size)}</span></span>
+      <span title="baixar pro PC" onclick="downloadBrainFile(${i})" style="cursor:pointer;color:var(--tx3);font-size:15px;padding:0 6px">⬇</span>
       <span class="x" title="excluir do cérebro" onclick="deleteBrainFile(${i})">✕</span>
     </div>`).join("");
   wrap.innerHTML=`${rows||'<div class="dr-desc" style="color:var(--tx3)">nenhum arquivo ainda</div>'}
@@ -2911,6 +2912,25 @@ async function uploadBrainFiles(ev){
   }
   if(st) st.textContent=done?`✓ ${done} arquivo(s) no cérebro`:"";
   if(sel){ const f=findNode(sel.id); if(f&&(f.type==="co"||f.type==="pj")) hydrateFiles(f); }
+}
+/* baixa um arquivo do cérebro de volta pro PC. Git Blobs API (base64 via header de auth)
+   funciona em repo PRIVADO e pra qualquer tamanho — a listagem já traz o sha de cada item. */
+async function downloadBrainFile(i){
+  const x=filesList[i]; if(!x||!filesDir) return;
+  const st=document.getElementById("filesStatus");
+  if(st) st.textContent=`baixando ${x.name}…`;
+  try{
+    const j=await ghGet(`/repos/${stateRepo()}/git/blobs/${x.sha}`);
+    const b64=((j&&j.content)||"").replace(/\s/g,"");
+    if(!b64) throw new Error("arquivo vazio ou não lido");
+    const bin=atob(b64), bytes=new Uint8Array(bin.length);
+    for(let k=0;k<bin.length;k++) bytes[k]=bin.charCodeAt(k);
+    const url=URL.createObjectURL(new Blob([bytes]));
+    const a=document.createElement("a"); a.href=url; a.download=x.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+    if(st) st.textContent=`✓ baixado ${x.name}`;
+  }catch(e){ if(st) st.textContent=""; uiToast("Falha ao baixar: "+(e.message||e),"bad"); }
 }
 /* ===== Bloco 1B: Briefings de tarefa — 1 clique monta o prompt-mestre pra IA ===== */
 const BRIEF_TYPES={
