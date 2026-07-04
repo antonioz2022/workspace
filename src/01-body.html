@@ -32,11 +32,11 @@
 </div>
 
 <div class="topright">
-  <button class="btn ic" onclick="openSearch()" title="Buscar em tudo (Ctrl+K)">🔎</button>
+  <button class="btn ic" onclick="openSearch()" title="Buscar em tudo (Ctrl+K)" aria-label="Buscar">🔎</button>
   <button class="btn" id="wsPill" onclick="openWsModal()" title="Trocar de workspace">🗂 Workspace</button>
   <button class="btn" id="contasBtn" onclick="openAiModal()">⚙ <span class="lbl-hide">Contas</span></button>
   <div class="more-wrap">
-    <button class="btn ic" id="moreBtn" onclick="toggleMore(event)" title="Mais opções" aria-haspopup="true" aria-expanded="false">⋯</button>
+    <button class="btn ic" id="moreBtn" onclick="toggleMore(event)" title="Mais opções" aria-label="Mais opções" aria-haspopup="true" aria-expanded="false">⋯</button>
     <div class="more-menu" id="moreMenu" role="menu">
       <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
       <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>

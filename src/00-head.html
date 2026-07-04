@@ -37,7 +37,7 @@
   .hud .m span, .dr-sec, .node .sub{font-family:var(--mono)}
 
   /* ===== ⚙ Conta & Workspace: header de conta + abas ===== */
-  .acc-id{display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:var(--glass2)}
+  .acc-id{display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:var(--glass2); flex-wrap:wrap}
   .acc-id .av{width:38px; height:38px; border-radius:50%; display:grid; place-items:center; font-weight:800; font-size:16px; background:linear-gradient(135deg,#7C4FF0,#9D6BFF); color:#fff; flex:none}
   .acc-tabs{display:flex; gap:4px; flex-wrap:wrap; border-bottom:1px solid var(--line); margin:16px 0 16px}
   .acc-tab{background:transparent; border:1px solid transparent; border-bottom:none; color:var(--tx3); font-weight:650; font-size:13px; padding:8px 13px; border-radius:10px 10px 0 0; cursor:pointer; font-family:inherit}
@@ -228,7 +228,7 @@
     border:1px solid rgba(109,141,255,.18); display:inline-block; transition:.15s
   }
   a.link:hover{background:rgba(109,141,255,.24)}
-  .dr-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; gap:9px}
+  .dr-foot{padding:16px 24px; border-top:1px solid var(--line); display:flex; gap:9px; flex-wrap:wrap}
   .mini-list{display:flex; flex-direction:column; gap:6px}
   .mini-item{
     display:flex; align-items:center; gap:10px; background:var(--glass2); border:1px solid var(--line);
@@ -367,6 +367,10 @@
     input,textarea,select{font-size:16px !important} /* evita auto-zoom do iOS */
     .dr-head{padding:16px 16px 12px}
     .mapfilter{ top:92px }
+    .modal-foot{flex-wrap:wrap}                 /* botões do rodapé quebram em vez de estourar */
+  }
+  @media (max-width:430px){
+    .f-row{flex-wrap:wrap}   /* rede de segurança: campos lado a lado empilham se não couberem */
   }
 </style>
 </head>

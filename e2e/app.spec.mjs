@@ -307,6 +307,45 @@ test("layout: a barra superior NÃO sobrepõe o HUD em nenhum tamanho", async ({
   }
 });
 
+test("mobile 360px: nada estoura a tela (página, drawer e modais)", async ({ page }) => {
+  await page.route("https://api.github.com/**", (r) => r.fulfill({ status: 404, json: {} })); // sem rede real
+  await novaEmpresa(page, "Empresa de Teste com Nome Longo");            // no tamanho padrão (rótulos visíveis)
+  await novoProjeto(page, "Empresa de Teste com Nome Longo", "Projeto de Nome Bem Comprido Também");
+  await page.setViewportSize({ width: 360, height: 760 });               // agora aperta pra celular
+  await page.evaluate(() => { const c = DB.companies[0], p = c.projects[0]; sel = { id: p.id, co: c, pj: p, type: "pj" }; openDrawer(findNode(p.id)); }); // abre o drawer por código (o nó fica fora da tela)
+  await expect(page.locator("#drawer")).toHaveClass(/open/);
+
+  // 1) com o drawer aberto, a PÁGINA não rola na horizontal
+  const noHScroll = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1);
+  expect(noHScroll, "página não deve rolar horizontal").toBe(true);
+
+  // 2) cada modal cabe na viewport e nenhum filho estoura a caixa do modal
+  const report = await page.evaluate(() => {
+    const openers = {
+      pjModal: () => openPjModalFor(DB.companies[0].id, DB.companies[0].projects[0].id),
+      coModal: () => openCoModal(),
+      appModal: () => openAppModalFor(DB.companies[0].projects[0].id),
+      prModal: () => { DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_x"; const p = DB.companies[0].projects[0]; p.github = "owner/repositorio-de-nome-longo"; teleCache[p.id] = { source: "github", repo: { defBranch: "main" }, git: { branch: "feature/x" } }; openPrModal(p.id); },
+    };
+    const out = {};
+    for (const [k, fn] of Object.entries(openers)) {
+      closeModals(); fn();
+      const m = document.querySelector(".overlay.open .modal"); if (!m) { out[k] = "no-modal"; continue; }
+      const mr = m.getBoundingClientRect();
+      let overflowers = 0;
+      m.querySelectorAll("*").forEach(el => { const r = el.getBoundingClientRect(); if (r.width > 0 && (r.right > mr.right + 1 || r.left < mr.left - 1)) overflowers++; });
+      out[k] = { fitsViewport: mr.left >= -1 && mr.right <= innerWidth + 1, overflowers };
+    }
+    closeModals();
+    return out;
+  });
+  for (const [name, r] of Object.entries(report)) {
+    expect(r, `${name} abriu`).not.toBe("no-modal");
+    expect(r.fitsViewport, `${name} cabe na viewport`).toBe(true);
+    expect(r.overflowers, `${name} sem filhos estourando`).toBe(0);
+  }
+});
+
 test("barra: menu ⋯ Mais abre e leva às ações secundárias", async ({ page }) => {
   await page.locator("#moreBtn").click();
   await expect(page.locator("#moreMenu")).toHaveClass(/show/);
