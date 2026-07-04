@@ -45,6 +45,16 @@ test("boot limpo: título, HUD, dock com convite, sem erros", async ({ page }) =
   await expect(page.locator("#dockBody")).toContainText("Converse com uma IA por aqui");
 });
 
+test("estado inicial: convite aparece no mapa vazio e some ao criar a 1ª empresa", async ({ page }) => {
+  await expect(page.locator("#emptyState")).toHaveClass(/show/);
+  await expect(page.locator("#emptyState")).toContainText("Comece o seu cérebro");
+  await page.locator('#emptyState button:has-text("Criar primeira empresa")').click();
+  await expect(page.locator("#coModal")).toHaveClass(/open/);
+  await page.fill("#coName", "Primeira");
+  await page.locator('#coModal button:has-text("Salvar")').click();
+  await expect(page.locator("#emptyState")).not.toHaveClass(/show/);
+});
+
 test("onboarding: criar empresa e projeto pelo mapa", async ({ page }) => {
   await novaEmpresa(page, "Acme");
   await expect(page.locator("#hudCos")).toHaveText("1");

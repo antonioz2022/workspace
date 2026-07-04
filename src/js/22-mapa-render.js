@@ -10,6 +10,11 @@ nodesEl.addEventListener("keydown", e=>{
   if(e.key==="Enter" || e.key===" " || e.key==="Spacebar"){ e.preventDefault(); handleClick(node.dataset.id, node.dataset.type); }
 });
 
+// estado inicial: aparece só quando não há nenhuma empresa (mapa vazio)
+function renderEmptyState(){
+  const el=document.getElementById("emptyState"); if(!el) return;
+  el.classList.toggle("show", DB.companies.length===0);
+}
 function applyCam(){
   worldEl.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.z})`;
   document.getElementById("zoomPct").textContent = Math.round(cam.z*100)+"%";
@@ -43,6 +48,7 @@ function render(){
   updateHud();
   renderWsPill();
   renderMapFilter();
+  renderEmptyState();
   applyCam();
   // pings
   DB.companies.forEach(c=>c.projects.forEach(p=>p.apps.forEach(a=>{

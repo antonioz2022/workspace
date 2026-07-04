@@ -79,6 +79,24 @@
   .b3{width:36vw;height:36vw; background:radial-gradient(circle,#2c1d52 0%,transparent 65%); top:34vh; left:58vw; animation-delay:-18s}
   @keyframes drift{to{transform:translate(6vw,4vh) scale(1.16)}}
 
+  /* ===== estado inicial (mapa vazio) ===== */
+  .empty-state{position:fixed; inset:0; z-index:4; display:none; place-items:center; pointer-events:none; padding:24px}
+  .empty-state.show{display:grid; animation:esIn .55s cubic-bezier(.2,.9,.3,1) both}
+  .es-card{text-align:center; max-width:430px; pointer-events:auto}
+  .es-logo{width:82px; height:82px; margin:0 auto 24px; display:block; filter:drop-shadow(0 0 26px rgba(139,92,246,.45)); animation:esFloat 6s ease-in-out infinite}
+  .es-signal{transform-box:fill-box; transform-origin:center; animation:esPulse 2.6s ease-in-out infinite}
+  .es-card h2{font-family:'Sora','Inter',sans-serif; font-size:27px; font-weight:800; letter-spacing:-.6px; line-height:1.15; margin-bottom:12px;
+    background:linear-gradient(115deg,#fff 10%,#B69CFF 55%,#F5A524 105%); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .es-card p{color:var(--tx2); font-size:14.5px; line-height:1.65; margin:0 auto 24px; max-width:380px}
+  .es-actions{display:flex; gap:10px; justify-content:center; flex-wrap:wrap}
+  .es-actions .btn{padding:11px 20px; font-size:14px}
+  .es-hint{margin-top:20px; font-size:12px; color:var(--tx3)}
+  .es-hint kbd{font-family:'JetBrains Mono',monospace; font-size:11px; background:var(--glass2); border:1px solid var(--line2);
+    border-radius:6px; padding:1px 6px; color:var(--tx2)}
+  @keyframes esIn{from{opacity:0; transform:translateY(16px) scale(.985)}}
+  @keyframes esFloat{50%{transform:translateY(-7px)}}
+  @keyframes esPulse{0%,100%{opacity:1} 50%{opacity:.4}}
+
   /* ===== canvas ===== */
   #viewport{position:fixed; inset:0; z-index:1; cursor:grab; overflow:hidden; touch-action:none}
   #viewport.panning{cursor:grabbing}
@@ -148,9 +166,10 @@
     border-radius:11px; padding:8px 15px; cursor:pointer; font-size:13px;
     font-family:inherit; font-weight:600; transition:.16s;
   }
-  .btn:hover{border-color:var(--ac); color:var(--ac2)}
+  .btn:hover{border-color:var(--ac); color:var(--ac2); transform:translateY(-1px)}
+  .btn:active{transform:translateY(0) scale(.98)}
   .btn.primary{background:linear-gradient(135deg,#7C4FF0,#9D6BFF); border:none; color:#fff; box-shadow:0 4px 16px rgba(139,92,246,.4)}
-  .btn.primary:hover{filter:brightness(1.12); color:#fff}
+  .btn.primary:hover{filter:brightness(1.1); color:#fff; transform:translateY(-1px); box-shadow:0 7px 22px rgba(139,92,246,.5)}
   .btn.ghost{background:transparent; border-color:transparent; color:var(--tx3)}
   .btn.ghost:hover{color:var(--bad)}
   .btn.sm{padding:5px 11px; font-size:12px; border-radius:9px}
@@ -234,7 +253,7 @@
     display:flex; align-items:center; gap:10px; background:var(--glass2); border:1px solid var(--line);
     padding:9px 13px; border-radius:11px; cursor:pointer; font-size:13.5px; font-weight:550; transition:.15s
   }
-  .mini-item:hover{border-color:var(--ac)}
+  .mini-item:hover{border-color:var(--ac); transform:translateX(3px)}
   .mini-item .mi-emoji{font-size:17px}
   .mini-item .arrow{margin-left:auto; color:var(--tx3)}
 
@@ -372,6 +391,11 @@
   @media (max-width:430px){
     .f-row{flex-wrap:wrap}   /* rede de segurança: campos lado a lado empilham se não couberem */
   }
+  /* respeita quem pediu menos animação no sistema */
+  @media (prefers-reduced-motion: reduce){
+    .blob, .es-logo, .es-signal, .empty-state.show, .node.enter, .sdot.load{animation:none !important}
+    .node:hover .orb, .btn:hover, .btn:active, .btn.primary:hover, .mini-item:hover{transform:none !important}
+  }
 </style>
 </head>
 <body>
@@ -432,6 +456,26 @@
 </div>
 <div class="mapfilter" id="mapFilter"></div>
 <div class="collab-banner" id="collabBanner"></div>
+
+<div class="empty-state" id="emptyState">
+  <div class="es-card">
+    <svg class="es-logo" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g fill="none" stroke="#8B5CF6" stroke-width="6"><path d="M34 29 60 60M20 60 60 60M34 91 60 60M77 96 60 60"/></g>
+      <path d="M77 24 60 60" fill="none" stroke="#F5A524" stroke-width="6"/>
+      <g fill="#8B5CF6"><circle cx="34" cy="29" r="8"/><circle cx="20" cy="60" r="8"/><circle cx="34" cy="91" r="8"/><circle cx="77" cy="96" r="8"/></g>
+      <circle class="es-signal" cx="77" cy="24" r="8.5" fill="#F5A524"/>
+      <circle cx="60" cy="60" r="12" fill="#B69CFF"/>
+    </svg>
+    <h2>Comece o seu cérebro</h2>
+    <p>Crie a primeira empresa e vá pendurando projetos, serviços e memória. Suas IAs leem tudo de lá, sem você reexplicar o contexto toda vez.</p>
+    <div class="es-actions">
+      <button class="btn primary" onclick="openCoModal()">＋ Criar primeira empresa</button>
+      <button class="btn" onclick="openWsModal()">🗂 Conectar workspace</button>
+    </div>
+    <div class="es-hint">dica: <kbd>Ctrl</kbd>+<kbd>K</kbd> busca em tudo quando você já tiver conteúdo</div>
+  </div>
+</div>
+
 <div class="helper">arraste o fundo pra navegar · scroll pra zoom · clique nos nós pra expandir · arraste um nó pra reposicionar</div>
 
 <!-- DRAWER -->
@@ -832,6 +876,11 @@ nodesEl.addEventListener("keydown", e=>{
   if(e.key==="Enter" || e.key===" " || e.key==="Spacebar"){ e.preventDefault(); handleClick(node.dataset.id, node.dataset.type); }
 });
 
+// estado inicial: aparece só quando não há nenhuma empresa (mapa vazio)
+function renderEmptyState(){
+  const el=document.getElementById("emptyState"); if(!el) return;
+  el.classList.toggle("show", DB.companies.length===0);
+}
 function applyCam(){
   worldEl.style.transform = `translate(${cam.x}px,${cam.y}px) scale(${cam.z})`;
   document.getElementById("zoomPct").textContent = Math.round(cam.z*100)+"%";
@@ -865,6 +914,7 @@ function render(){
   updateHud();
   renderWsPill();
   renderMapFilter();
+  renderEmptyState();
   applyCam();
   // pings
   DB.companies.forEach(c=>c.projects.forEach(p=>p.apps.forEach(a=>{
