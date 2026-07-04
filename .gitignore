@@ -1,2 +1,9 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+src/js/seed.local.js
+backups/
 brain/
+workspace.json
 *.bak*

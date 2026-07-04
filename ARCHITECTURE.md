@@ -101,11 +101,15 @@ src/
   99-tail.html
 build.mjs             monta; --local (raiz, seed real) · default (dist/, seed vazio) · --check/--check-deploy
 smoke-test.mjs        0) drift src↔index  1) sintaxe  2) sanitização  3) round-trip pendências  4) fluxos  5) símbolos
+e2e/ + playwright.config.mjs   e2e de navegador (Chromium) contra o build de deploy: boot sem erro
+                      de console, onboarding empresa/projeto, pendências com metadata, busca Ctrl+K,
+                      filtro por status, backup sanitizado, dock, teclado/a11y, validação de repo
+                      com API mockada (nenhum teste toca a rede real)
 ```
 
 **Fluxo de desenvolvimento**: editar `src/` → `node build.mjs --local` → testar (preview +
-`node smoke-test.mjs`) → deploy = `node build.mjs` e push do `dist/index.html` no repo público.
-O CI do repo público roda `--check-deploy` + smoke em todo push/PR.
+`node smoke-test.mjs` + `npx playwright test`) → deploy = `node build.mjs` e push do
+`dist/index.html` no repo público. O CI roda `--check-deploy` + smoke + e2e em todo push/PR.
 
 ## 6. Roadmap
 
@@ -115,7 +119,7 @@ O CI do repo público roda `--check-deploy` + smoke em todo push/PR.
 - Encher o próprio uso: perfis, runbooks, milestones e prazos reais (o valor agora vem do uso).
 
 **Médio prazo (produtização)**
-- Testes e2e de navegador (Playwright) sobre os fluxos críticos, rodando no CI.
+- ~~Testes e2e de navegador (Playwright) sobre os fluxos críticos, rodando no CI.~~ Feito em 2026-07-04.
 - PWA/offline (manifest + service worker) e instalável no celular.
 - Colaboração mais viva: polling no foco → notificação de mudanças (o worker já vê os commits).
 - Organizações/enterprise: workspace numa GitHub Org (já funciona; falta documentação e UX).
