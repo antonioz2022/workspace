@@ -457,15 +457,8 @@
   <div class="tabpane on" id="tab-conta">
     <div id="ghLoginCard" style="display:none; margin-bottom:10px; padding:12px; border:1px solid var(--line2); border-radius:12px; background:var(--glass2)"></div>
     <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin:0 0 12px"></div>
-    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px">
-      <b>☁ Sync multi-dispositivo:</b> repo <b>privado</b> onde o Córtex guarda a workspace
-      (<code>state.json</code> + brain — <b>sem</b> tokens, <b>sem</b> chaves). Mesmo repo em outro aparelho = mesmo mapa.
-    </p>
-    <div style="display:flex; gap:8px; align-items:center">
-      <input id="stateRepoInput" placeholder="ex.: antonioz2022/workspace-state" oninput="setStateRepo(this.value)" style="flex:1">
-      <button class="btn sm" onclick="syncStateNow()">☁ Sincronizar agora</button>
-    </div>
-    <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:6px"></div>
+    <div class="dr-sec" style="margin:4px 0 8px">☁ Sua workspace</div>
+    <div id="wsState"></div>
   </div>
 
   <div class="tabpane" id="tab-avancado">
@@ -1370,6 +1363,29 @@ async function uiConfirm(message, o){ o=o||{};
              {label:o.okLabel||"Confirmar", value:true, kind:o.danger?"danger":"primary"}],
     cancelValue:false });
 }
+function uiPrompt(opts){
+  opts=opts||{};
+  return new Promise(res=>{
+    const ov=document.createElement("div"); ov.className="ui-ov";
+    const dlg=document.createElement("div"); dlg.className="ui-dlg";
+    dlg.innerHTML=`${opts.title?`<h4>${esc(opts.title)}</h4>`:""}${opts.message?`<p>${esc(opts.message).replace(/\n/g,"<br>")}</p>`:""}
+      <input style="width:100%;margin-top:14px" placeholder="${esc(opts.placeholder||"")}">
+      <div class="btns"><button class="btn">${esc(opts.cancelLabel||"Cancelar")}</button><button class="btn primary ok">${esc(opts.okLabel||"OK")}</button></div>`;
+    const inp=dlg.querySelector("input"), ok=dlg.querySelector(".ok"), cancel=dlg.querySelector(".btns .btn:not(.ok)");
+    inp.value=opts.value||"";
+    let done=false;
+    const close=v=>{ if(done)return; done=true; ov.remove(); document.removeEventListener("keydown",onKey); res(v); };
+    function validate(){ if(opts.confirmText!==undefined) ok.disabled = inp.value.trim()!==opts.confirmText; }
+    inp.addEventListener("input", validate);
+    ok.onclick=()=>{ if(!ok.disabled) close(inp.value.trim()); };
+    cancel.onclick=()=>close(null);
+    function onKey(e){ if(e.key==="Escape") close(null); else if(e.key==="Enter" && !ok.disabled) close(inp.value.trim()); }
+    ov.onclick=e=>{ if(e.target===ov) close(null); };
+    document.addEventListener("keydown",onKey);
+    ov.appendChild(dlg); document.body.appendChild(ov);
+    validate(); inp.focus(); if(inp.select) inp.select();
+  });
+}
 // redireciona TODOS os alert() do app pro toast bonito — nada de popup do navegador
 window.alert=(m)=>uiToast(String(m));
 
@@ -1423,8 +1439,7 @@ async function githubLogout(){
   localStorage.removeItem(LS_KEY+"-ghlogin");
   const gi=document.getElementById("ghTokenInput"); if(gi) gi.value="";
   const card=document.getElementById("ghLoginCard"); if(card){ card.style.display="none"; card.innerHTML=""; }
-  renderAccHeader(); renderMembers(); renderMcpConnections(); renderWatchdog();
-  stateBadge("☁ desconectado");
+  renderAccHeader(); renderMembers(); renderMcpConnections(); renderWatchdog(); renderWorkspaceState();
   uiToast("Você saiu da conta GitHub.", "ok");
 }
 
@@ -1466,7 +1481,7 @@ function pollDeviceToken(deviceCode, interval, deadline){
         if(j.login) localStorage.setItem(LS_KEY+"-ghlogin", j.login);
         const card=document.getElementById("ghLoginCard");
         if(card) card.innerHTML=`<div style="color:var(--ok);font-size:13px">✓ conectado como <b>@${esc(j.login||"você")}</b> — já pode gerenciar tudo por aqui.</div>`;
-        renderAccHeader(); renderMembers();
+        renderAccHeader(); renderMembers(); renderWorkspaceState();
         return;
       }
       if(j.slow_down) interval=(j.interval||interval+5);
@@ -1489,8 +1504,7 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
     }
     gs.textContent=txt; gs.style.color=(d!==null&&d<10)?"var(--warn)":"var(--tx3)";
   }
-  const sr=document.getElementById("stateRepoInput"); if(sr) sr.value=DB.settings.stateRepo||"";
-  stateBadge(stateSyncOn()?"☁ sync ligada":"☁ desligada (token + repo privado de estado)");
+  renderWorkspaceState();
   const mu=document.getElementById("mcpUrlInput"); if(mu) mu.value=DB.settings.mcpUrl||MCP_URL_DEFAULT;
   renderAIDirectory();
   renderMcpConnections();
@@ -2402,6 +2416,80 @@ async function pullState({force=false}={}){
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
   stateBadge(stateSyncOn()?"☁ sync ligada — salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
 
+/* ===== 🚀 Workspace no automático: criar/conectar/apagar pelo Córtex ===== */
+function renderWorkspaceState(){
+  const el=document.getElementById("wsState"); if(!el) return;
+  const tok=(DB.settings||{}).githubToken, repo=stateRepo();
+  if(!tok){ el.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">Entre com o GitHub (no topo) pra criar e sincronizar sua workspace.</div>`; return; }
+  if(!repo){
+    el.innerHTML=`<div class="acc-id" style="flex-direction:column;align-items:stretch;gap:12px">
+      <div><b>Nenhuma workspace ainda.</b><br><span style="font-size:11.5px;color:var(--tx3)">É um repo privado onde o Córtex salva tudo (empresas, projetos, brain) e sincroniza sozinho.</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn sm primary" onclick="createWorkspace()">🚀 Criar minha workspace</button>
+        <button class="btn sm" onclick="connectExistingWorkspace()">Conectar existente</button>
+      </div></div>`;
+    return;
+  }
+  el.innerHTML=`<div class="acc-id">
+      <span class="av" style="background:var(--glass2);border:1px solid var(--line2)">☁</span>
+      <span style="flex:1;min-width:0"><b>${esc(repo)}</b><br><span style="font-size:11.5px;color:var(--tx3)">sincroniza sozinha · sem apertar botão</span></span>
+    </div>
+    <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:8px"></div>
+    <details style="margin-top:10px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Avançado</summary>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn sm" onclick="disconnectWorkspace()">Desconectar</button>
+        <button class="btn sm danger" onclick="deleteWorkspace()">Apagar workspace</button>
+      </div>
+      <p style="font-size:11px;color:var(--tx3);margin:8px 0 0">Desconectar = só some daqui (repo fica salvo). Apagar = remove o repo do GitHub de vez.</p>
+    </details>`;
+  if(stateSyncOn()) stateBadge("☁ sincronizada · salva sozinho ao editar", true);
+}
+async function createWorkspace(){
+  if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub primeiro.","warn"); return; }
+  const name=await uiPrompt({title:"Criar workspace", message:"Vou criar um repositório PRIVADO no seu GitHub pra guardar tudo. Nome:", value:"cortex-workspace", placeholder:"cortex-workspace", okLabel:"🚀 Criar"});
+  if(!name) return;
+  try{
+    const r=await fetch("https://api.github.com/user/repos",{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
+      body:JSON.stringify({name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})});
+    if(r.status===422){ uiToast("Já existe um repo com esse nome — tente outro.","warn"); return; }
+    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||("HTTP "+r.status)); }
+    const j=await r.json();
+    setStateRepo(j.full_name);
+    uiToast("Workspace criada ✓ semeando…","ok");
+    await pushState();
+    try{ if(typeof flushBrainPush==="function") await flushBrainPush(); }catch(e){}
+    renderWorkspaceState();
+    uiToast("Pronto! Sua workspace sincroniza sozinha agora.","ok");
+  }catch(e){ uiToast("Criar workspace: "+(e.message||e),"bad"); }
+}
+async function connectExistingWorkspace(){
+  const login=localStorage.getItem(LS_KEY+"-ghlogin")||"";
+  const repo=await uiPrompt({title:"Conectar workspace existente", message:"Cole o repo (owner/repo) que já tem sua workspace:", value:login?login+"/":"", placeholder:"owner/repo", okLabel:"Conectar"});
+  if(repo===null) return;
+  if(!/^[^/\s]+\/[^/\s]+$/.test(repo)){ uiToast("Formato inválido — use owner/repo.","warn"); return; }
+  setStateRepo(repo);
+  const pulled=await pullState({force:true}).catch(()=>false);
+  renderWorkspaceState();
+  uiToast(pulled?"Conectada — puxei a workspace ✓":"Conectada.","ok");
+}
+async function disconnectWorkspace(){
+  if(!(await uiConfirm("Desconectar a workspace deste navegador? O repo continua salvo no GitHub — dá pra reconectar depois.",{okLabel:"Desconectar"}))) return;
+  setStateRepo(""); localStorage.removeItem(LS_KEY+"-syncat");
+  renderWorkspaceState(); uiToast("Desconectada. O repo continua no GitHub.","ok");
+}
+async function deleteWorkspace(){
+  const repo=stateRepo(); if(!repo) return;
+  const typed=await uiPrompt({title:"Apagar workspace de vez?", message:`Isso APAGA o repositório ${repo} do GitHub — some tudo, sem volta. Digite o nome do repo pra confirmar:`, placeholder:repo, okLabel:"Apagar de vez", confirmText:repo});
+  if(typed===null) return;
+  try{
+    const r=await fetch("https://api.github.com/repos/"+repo,{method:"DELETE",headers:ghApiHeaders()});
+    if(!r.ok && r.status!==204){ const j=await r.json().catch(()=>({}));
+      throw new Error((r.status===403?"teu token não pode apagar — re-entre com o GitHub pra pegar o novo acesso. ":"")+(j.message||("HTTP "+r.status))); }
+    setStateRepo(""); localStorage.removeItem(LS_KEY+"-syncat");
+    renderWorkspaceState(); uiToast("Workspace apagada do GitHub.","ok");
+  }catch(e){ uiToast("Apagar: "+(e.message||e),"bad"); }
+}
+
 /* ===== Fase 2c: ciclo fechado da brain — write-back + read remoto no cérebro =====
    O repo de estado É a Grande Brain: brain/<empresa>/<projeto>/{memoria,pendencias,
    projeto}.md + INDEX.md. Painel commita edições (qualquer device); IAs commitam por
@@ -3078,8 +3166,9 @@ async function autoRefreshAll(force){
     }
   }finally{ _autoBusy=false; }
 }
-window.addEventListener("focus", ()=>autoRefreshAll(false));
-document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") autoRefreshAll(false); });
+function onAppFocus(){ autoRefreshAll(false); if(stateSyncOn()) pullState({force:false}).catch(()=>{}); }
+window.addEventListener("focus", onAppFocus);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") onAppFocus(); });
 setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true); }, 5*60*1000);
 
 /* ================= go ================= */
