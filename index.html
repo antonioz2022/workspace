@@ -1301,6 +1301,7 @@ function openDrawer(f){
         Estado vivo do projeto. Sincroniza com <b>Workspace/brain/</b>, onde suas IAs
         (Claude Code, Codex…) leem e atualizam.
       </div>
+      <div id="memSyncBanner"></div>
       <textarea id="pjMemory" style="width:100%; min-height:90px; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:10px 13px; font-size:13px; font-family:'JetBrains Mono',monospace; resize:vertical">${esc(p.context||"")}</textarea>
       <div id="memBar" style="margin-top:8px"><button class="btn sm" onclick="saveMemory('${p.id}')">💾 Salvar memória</button></div>
       ${briefSectionHtml(p.id)}
@@ -1378,6 +1379,7 @@ function openDrawer(f){
     if(a.health) ping(a);
   }
   if(f.type==="pj") hydrateTele(f.co,f.pj);
+  if(f.type==="pj" && typeof hydrateMemSync==="function") hydrateMemSync(f.co,f.pj);
   if(f.type==="co"||f.type==="pj") hydrateFiles(f);
   d.classList.add("open");
 }
@@ -2886,8 +2888,8 @@ async function copyProjectContext(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
   const p=f.pj, btn=document.getElementById("copyCtxBtn"), setBtn=s=>{ if(btn) btn.innerHTML=s; };
   setBtn("⏳ lendo…");
-  let log="(pasta do projeto não conectada — clique 🔗 Conectar antes)";
-  const dir=await getProjDir(pid,{prompt:true}).catch(()=>null);
+  let log=null;
+  const dir=await getProjDir(pid,{prompt:false}).catch(()=>null);   // reusa a pasta já conectada; não força escolher
   if(dir){
     try{
       const gitDir=await dir.getDirectoryHandle(".git");
@@ -2895,10 +2897,16 @@ async function copyProjectContext(pid){
       const raw=await readFileIf(logsDir,"HEAD");
       if(raw){ const lines=raw.split("\n").filter(l=>l.trim()).slice(-15).reverse();
         log=lines.map(l=>{ const tab=l.indexOf("\t"), rest=tab>=0?l.slice(tab+1):l; return "- "+rest.replace(/^[^:]*:\s*/,"").trim(); }).join("\n"); }
-      else log="(pasta sem .git)";
-    }catch(e){ log="(pasta sem .git)"; }
+    }catch(e){}
     await refreshProjectTelemetry(p).catch(()=>{});
   }
+  if(!log){
+    // remoto (sem pasta local): usa os commits lidos do GitHub — assim a ponte funciona em qualquer aparelho
+    let tt=teleCache[pid];
+    if(!(tt&&tt.commits&&tt.commits.length)){ try{ tt=await getTelemetry(p,{promptLocal:false}); }catch(e){} }
+    if(tt&&tt.commits&&tt.commits.length) log=tt.commits.map(cm=>`- ${cm.msg}${cm.hash?` (${cm.hash})`:""}`).join("\n");
+  }
+  if(!log) log="(sem commits acessíveis — conecte a pasta local, ou linke o repo GitHub + token em ⚙ Contas)";
   const t=teleCache[pid]||{};
   const branch=t.git?`branch ${t.git.branch}, ${t.git.commits} commit(s), HEAD ${t.git.hash||"—"}`:"sem git";
   const specs=t.specs?`${t.specs.count} features (atual ${t.specs.last})`:"—";
@@ -2919,6 +2927,7 @@ ${log}
 ${pend}`;
   const ok=await copyText(out);
   setBtn(ok?"✓ copiado — cole na sua IA":"⚠ copie do console (F12)");
+  if(ok && typeof uiToast==="function") uiToast("Contexto copiado. Cole na IA da sessão do repo pra ela reescrever a memória — o painel sincroniza.","ok");
   if(!ok) console.log(out);
   setTimeout(()=>setBtn("📋 Copiar contexto p/ IA"), 2800);
 }
@@ -3672,6 +3681,56 @@ async function deleteBrainFile(i){
   }catch(e){ alert("Excluir: "+(e.message||e)); }
 }
 
+/* ===== 🔄 Reconciliador de memória — a Brain sabe quando está defasada =====
+   Fecha o buraco "nada percebe que a memória está velha": compara o último commit do
+   repo de CÓDIGO com a última vez que a memoria.md deste projeto foi atualizada no
+   cérebro (workspace-state). Se o código andou DEPOIS da memória, sinaliza no drawer e
+   no cockpit, e oferece a ponte (📋 Contexto p/ IA) pra a IA da sessão escrever de volta. */
+const memSyncCache={};   // pid -> {stale, count, memTs, codeTs, never, at}
+async function brainMemoriaTs(c,p){
+  // data do último commit no cérebro que tocou a memoria.md deste projeto
+  if(!stateSyncOn()) return undefined;                 // sem cérebro → não opina
+  const path=`${brainDirOf(c,p)}/memoria.md`;
+  try{
+    const j=await ghGet(`/repos/${stateRepo()}/commits?path=${encodeURIComponent(path)}&per_page=1`);
+    if(Array.isArray(j) && j[0] && j[0].commit && j[0].commit.author && j[0].commit.author.date)
+      return Date.parse(j[0].commit.author.date);
+    return null;                                        // memória ainda não existe no cérebro
+  }catch(e){ return undefined; }                        // sem acesso/erro → não opina
+}
+async function computeMemStale(c,p){
+  if(!p.github || p.noRepo || !stateSyncOn()) return null;   // só faz sentido com repo + cérebro
+  const memTs=await brainMemoriaTs(c,p);
+  if(memTs===undefined) return null;
+  const [o,r]=p.github.split("/");
+  let codeTs=null, count=0;
+  try{
+    // commits do código DEPOIS da última atualização da memória (memória nova → últimos)
+    const q = memTs ? `&since=${new Date(memTs+1000).toISOString()}` : "";
+    const j=await ghGet(`/repos/${o}/${r}/commits?per_page=20${q}`);
+    if(Array.isArray(j)){
+      count=j.length;
+      if(j[0]&&j[0].commit&&j[0].commit.author) codeTs=Date.parse(j[0].commit.author.date);
+    }
+  }catch(e){ return null; }
+  const res={ stale:(memTs===null)?true:count>0, count, memTs, codeTs, never:memTs===null, at:Date.now() };
+  memSyncCache[p.id]=res;
+  return res;
+}
+function memSyncBannerHtml(res,pid){
+  if(!res || !res.stale) return "";
+  const box=inner=>`<div style="font-size:12px;color:var(--warn);background:rgba(245,165,36,.09);border:1px solid rgba(245,165,36,.28);border-radius:9px;padding:8px 11px;margin:2px 0 8px">${inner}
+    <div style="margin-top:6px"><button class="btn sm" onclick="copyProjectContext('${pid}')" title="Monta o prompt (commits + pendências + memória) pra a IA da sessão do repo reescrever a memória">📋 Gerar atualização pra IA</button></div></div>`;
+  if(res.never) return box(`⚠ A memória deste projeto <b>ainda não foi escrita no cérebro</b>. Escreva acima (sobe sozinho) ou gere o contexto pra sua IA.`);
+  const n=res.count>=20?"20+":String(res.count);
+  return box(`⚠ <b>Memória possivelmente defasada:</b> ${n} commit(s) no repo desde a última atualização da memória${res.memTs?` · memória ${esc(agoStr(res.memTs))}`:""}${res.codeTs?` · último commit ${esc(agoStr(res.codeTs))}`:""}.`);
+}
+async function hydrateMemSync(c,p){
+  const paint=res=>{ const el=document.getElementById("memSyncBanner"); if(el && (!sel||sel.id===p.id)) el.innerHTML = res?memSyncBannerHtml(res,p.id):""; };
+  const cache=memSyncCache[p.id];
+  if(cache && Date.now()-cache.at < 90000){ paint(cache); return; }   // TTL: não re-bate a API a cada re-render
+  paint(await computeMemStale(c,p).catch(()=>null));
+}
 /* ===== Etapa E: 🎛 Cockpit — todos os projetos num relance ===== */
 function cockpitRows(){
   const rows=[];
@@ -3682,8 +3741,9 @@ function cockpitRows(){
       + (p.apps||[]).filter(a=>a.health && pingCache[a.id] && pingCache[a.id].cls==="bad").length;
     const commitTs=t&&t.git?t.git.ts:null;
     const staleDays=commitTs?(Date.now()-commitTs)/86400000:null;
-    const score=alerts*3 + open + (staleDays!==null&&staleDays>7?2:0) + (p.status==="ativo"?0:-1);
-    rows.push({c,p,t,open,alerts,commitTs,score});
+    const memStale=!!(memSyncCache[p.id]&&memSyncCache[p.id].stale);
+    const score=alerts*3 + open + (staleDays!==null&&staleDays>7?2:0) + (memStale?2:0) + (p.status==="ativo"?0:-1);
+    rows.push({c,p,t,open,alerts,commitTs,memStale,score});
   }
   return rows.sort((a,b)=>b.score-a.score);
 }
@@ -3698,6 +3758,7 @@ function renderCockpit(){
       <span class="chip">${rows.reduce((s,r)=>s+r.open,0)} pendência(s) aberta(s)</span>
       ${rows.some(r=>r.t&&r.t.repo)?`<span class="chip">🐛 ${rows.reduce((s,r)=>s+((r.t&&r.t.repo)?r.t.repo.openIssues:0),0)} issues+PRs</span>`:""}
       ${(function(){const n=overdueCount(); return n?`<span class="chip" style="color:var(--bad)" onclick="closeModals();openAgenda()" title="ver na Agenda">📅 ${n} vencida(s)</span>`:"";})()}
+      ${(function(){const n=rows.filter(r=>r.memStale).length; return n?`<span class="chip" style="color:var(--warn)" title="projetos com commits novos no repo desde a última atualização da memória — abra o projeto e gere o contexto pra IA">🧠 ${n} memória(s) defasada(s)</span>`:"";})()}
       <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
       <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
     </div>
@@ -3711,7 +3772,7 @@ function renderCockpit(){
         <span class="mi-emoji">${r.p.img?`<img src="${esc(r.p.img)}" style="width:26px;height:26px;object-fit:contain;vertical-align:middle">`:esc(r.p.emoji||"🚀")}</span>
         <span style="flex:1;min-width:0">
           <b>${esc(r.p.name)}</b> <span style="color:var(--tx3);font-size:11px">· ${esc(r.c.name)}</span>${st}<br>
-          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src}${gh} · ~US$ ${pjCost(r.p).toFixed(0)}/mês</span>
+          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src}${gh} · ~US$ ${pjCost(r.p).toFixed(0)}/mês${r.memStale?' · <span style="color:var(--warn)">🧠 memória defasada</span>':''}</span>
         </span>
         <span class="arrow">→</span>
       </div>`;
@@ -3968,6 +4029,7 @@ function openCockpit(){
   (async()=>{
     for(const c of DB.companies) for(const p of c.projects){
       try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
+      try{ if(typeof computeMemStale==="function") await computeMemStale(c,p); }catch(e){}
     }
     renderCockpit();
   })();

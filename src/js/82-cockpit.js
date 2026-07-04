@@ -8,8 +8,9 @@ function cockpitRows(){
       + (p.apps||[]).filter(a=>a.health && pingCache[a.id] && pingCache[a.id].cls==="bad").length;
     const commitTs=t&&t.git?t.git.ts:null;
     const staleDays=commitTs?(Date.now()-commitTs)/86400000:null;
-    const score=alerts*3 + open + (staleDays!==null&&staleDays>7?2:0) + (p.status==="ativo"?0:-1);
-    rows.push({c,p,t,open,alerts,commitTs,score});
+    const memStale=!!(memSyncCache[p.id]&&memSyncCache[p.id].stale);
+    const score=alerts*3 + open + (staleDays!==null&&staleDays>7?2:0) + (memStale?2:0) + (p.status==="ativo"?0:-1);
+    rows.push({c,p,t,open,alerts,commitTs,memStale,score});
   }
   return rows.sort((a,b)=>b.score-a.score);
 }
@@ -24,6 +25,7 @@ function renderCockpit(){
       <span class="chip">${rows.reduce((s,r)=>s+r.open,0)} pendência(s) aberta(s)</span>
       ${rows.some(r=>r.t&&r.t.repo)?`<span class="chip">🐛 ${rows.reduce((s,r)=>s+((r.t&&r.t.repo)?r.t.repo.openIssues:0),0)} issues+PRs</span>`:""}
       ${(function(){const n=overdueCount(); return n?`<span class="chip" style="color:var(--bad)" onclick="closeModals();openAgenda()" title="ver na Agenda">📅 ${n} vencida(s)</span>`:"";})()}
+      ${(function(){const n=rows.filter(r=>r.memStale).length; return n?`<span class="chip" style="color:var(--warn)" title="projetos com commits novos no repo desde a última atualização da memória — abra o projeto e gere o contexto pra IA">🧠 ${n} memória(s) defasada(s)</span>`:"";})()}
       <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
       <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
     </div>
@@ -37,7 +39,7 @@ function renderCockpit(){
         <span class="mi-emoji">${r.p.img?`<img src="${esc(r.p.img)}" style="width:26px;height:26px;object-fit:contain;vertical-align:middle">`:esc(r.p.emoji||"🚀")}</span>
         <span style="flex:1;min-width:0">
           <b>${esc(r.p.name)}</b> <span style="color:var(--tx3);font-size:11px">· ${esc(r.c.name)}</span>${st}<br>
-          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src}${gh} · ~US$ ${pjCost(r.p).toFixed(0)}/mês</span>
+          <span style="font-size:11.5px;color:var(--tx2)">${dot} ${r.open} pendência(s) · ${r.alerts} alerta(s) · ${commit} ${src}${gh} · ~US$ ${pjCost(r.p).toFixed(0)}/mês${r.memStale?' · <span style="color:var(--warn)">🧠 memória defasada</span>':''}</span>
         </span>
         <span class="arrow">→</span>
       </div>`;

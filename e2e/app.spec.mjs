@@ -560,6 +560,31 @@ test("URL de serviço: javascript: não vira link nem é fetchado; https válido
   await expect(ok).toHaveAttribute("rel", "noopener noreferrer");
 });
 
+test("reconciliador: sinaliza memória defasada quando o repo andou depois da última atualização", async ({ page }) => {
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    // memoria.md no cérebro: último commit ANTIGO
+    if (url.includes("/commits") && url.includes("memoria.md"))
+      return route.fulfill({ json: [{ commit: { author: { date: "2020-01-01T00:00:00Z" } } }] });
+    // commits do repo de CÓDIGO (após o `since`): 2 novos
+    if (url.includes("/repos/owner/repo/commits"))
+      return route.fulfill({ json: [
+        { sha: "aaaaaa1", commit: { message: "feat: novo", author: { date: "2030-01-02T00:00:00Z" } }, html_url: "https://x/1" },
+        { sha: "bbbbbb2", commit: { message: "fix: bug", author: { date: "2030-01-01T00:00:00Z" } }, html_url: "https://x/2" },
+      ] });
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    const p = DB.companies[0].projects[0]; p.github = "owner/repo"; save();
+    sel = { id: p.id, co: DB.companies[0], pj: p, type: "pj" }; openDrawer(findNode(p.id));
+  });
+  await expect(page.locator("#memSyncBanner")).toContainText("defasada", { timeout: 6000 });
+  await expect(page.locator('#memSyncBanner button:has-text("Gerar atualização pra IA")')).toBeVisible();
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);

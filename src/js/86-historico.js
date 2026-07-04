@@ -61,6 +61,7 @@ function openCockpit(){
   (async()=>{
     for(const c of DB.companies) for(const p of c.projects){
       try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
+      try{ if(typeof computeMemStale==="function") await computeMemStale(c,p); }catch(e){}
     }
     renderCockpit();
   })();

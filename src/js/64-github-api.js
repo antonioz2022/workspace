@@ -288,8 +288,8 @@ async function copyProjectContext(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
   const p=f.pj, btn=document.getElementById("copyCtxBtn"), setBtn=s=>{ if(btn) btn.innerHTML=s; };
   setBtn("⏳ lendo…");
-  let log="(pasta do projeto não conectada — clique 🔗 Conectar antes)";
-  const dir=await getProjDir(pid,{prompt:true}).catch(()=>null);
+  let log=null;
+  const dir=await getProjDir(pid,{prompt:false}).catch(()=>null);   // reusa a pasta já conectada; não força escolher
   if(dir){
     try{
       const gitDir=await dir.getDirectoryHandle(".git");
@@ -297,10 +297,16 @@ async function copyProjectContext(pid){
       const raw=await readFileIf(logsDir,"HEAD");
       if(raw){ const lines=raw.split("\n").filter(l=>l.trim()).slice(-15).reverse();
         log=lines.map(l=>{ const tab=l.indexOf("\t"), rest=tab>=0?l.slice(tab+1):l; return "- "+rest.replace(/^[^:]*:\s*/,"").trim(); }).join("\n"); }
-      else log="(pasta sem .git)";
-    }catch(e){ log="(pasta sem .git)"; }
+    }catch(e){}
     await refreshProjectTelemetry(p).catch(()=>{});
   }
+  if(!log){
+    // remoto (sem pasta local): usa os commits lidos do GitHub — assim a ponte funciona em qualquer aparelho
+    let tt=teleCache[pid];
+    if(!(tt&&tt.commits&&tt.commits.length)){ try{ tt=await getTelemetry(p,{promptLocal:false}); }catch(e){} }
+    if(tt&&tt.commits&&tt.commits.length) log=tt.commits.map(cm=>`- ${cm.msg}${cm.hash?` (${cm.hash})`:""}`).join("\n");
+  }
+  if(!log) log="(sem commits acessíveis — conecte a pasta local, ou linke o repo GitHub + token em ⚙ Contas)";
   const t=teleCache[pid]||{};
   const branch=t.git?`branch ${t.git.branch}, ${t.git.commits} commit(s), HEAD ${t.git.hash||"—"}`:"sem git";
   const specs=t.specs?`${t.specs.count} features (atual ${t.specs.last})`:"—";
@@ -321,6 +327,7 @@ ${log}
 ${pend}`;
   const ok=await copyText(out);
   setBtn(ok?"✓ copiado — cole na sua IA":"⚠ copie do console (F12)");
+  if(ok && typeof uiToast==="function") uiToast("Contexto copiado. Cole na IA da sessão do repo pra ela reescrever a memória — o painel sincroniza.","ok");
   if(!ok) console.log(out);
   setTimeout(()=>setBtn("📋 Copiar contexto p/ IA"), 2800);
 }

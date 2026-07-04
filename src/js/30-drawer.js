@@ -46,6 +46,7 @@ function openDrawer(f){
         Estado vivo do projeto. Sincroniza com <b>Workspace/brain/</b>, onde suas IAs
         (Claude Code, Codex…) leem e atualizam.
       </div>
+      <div id="memSyncBanner"></div>
       <textarea id="pjMemory" style="width:100%; min-height:90px; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:10px 13px; font-size:13px; font-family:'JetBrains Mono',monospace; resize:vertical">${esc(p.context||"")}</textarea>
       <div id="memBar" style="margin-top:8px"><button class="btn sm" onclick="saveMemory('${p.id}')">💾 Salvar memória</button></div>
       ${briefSectionHtml(p.id)}
@@ -123,6 +124,7 @@ function openDrawer(f){
     if(a.health) ping(a);
   }
   if(f.type==="pj") hydrateTele(f.co,f.pj);
+  if(f.type==="pj" && typeof hydrateMemSync==="function") hydrateMemSync(f.co,f.pj);
   if(f.type==="co"||f.type==="pj") hydrateFiles(f);
   d.classList.add("open");
 }
