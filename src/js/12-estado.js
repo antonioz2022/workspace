@@ -37,6 +37,7 @@ function hardenDB(db){
     }
   }
   if(db.settings && Array.isArray(db.settings.providers)) for(const pr of db.settings.providers) pr.id=safeId(pr.id);
+  if(Array.isArray(db.links)) for(const l of db.links){ l.id=safeId(l.id); if(typeof l.type!=="string") l.type="relacionado"; }
   return db;
 }
 function migrate(db){
@@ -61,6 +62,11 @@ function migrate(db){
       p.context = p.context || "";
     }));
     db.version=5;
+  }
+  // v6 (04/07): grafo de conhecimento — relações tipadas entre nós (empresa/projeto/serviço)
+  if(db.version < 6){
+    db.links = db.links || [];
+    db.version=6;
   }
   return hardenDB(db); // toda entrada (load/pull) passa pela higiene
 }

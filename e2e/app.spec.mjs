@@ -585,6 +585,43 @@ test("reconciliador: sinaliza memória defasada quando o repo andou depois da ú
   await expect(page.locator('#memSyncBanner button:has-text("Gerar atualização pra IA")')).toBeVisible();
 });
 
+test("grafo de conhecimento: relação criada pela UI aparece no drawer, no mapa, no GRAFO.md e sobrevive ao sync", async ({ page }) => {
+  // 2 empresas + 2 projetos direto no estado (posições distintas) — evita flakiness de clique/sobreposição
+  await page.evaluate(() => {
+    DB.companies = [
+      { id: "pulsar", name: "Pulsar", emoji: "📡", color: "#8B5CF6", x: -400, y: 0, projects: [{ id: "publicador", name: "Publicador", emoji: "🚀", x: -400, y: 240, apps: [], todos: [], chats: [] }] },
+      { id: "blockyfy", name: "Blockyfy", emoji: "🎮", color: "#59d99d", x: 400, y: 0, projects: [{ id: "dbg", name: "Dragon Block", emoji: "🐉", x: 400, y: 240, apps: [], todos: [], chats: [] }] },
+    ];
+    expanded.add("pulsar"); expanded.add("blockyfy"); save(); render();
+  });
+  // abre o drawer do Publicador e cria a relação pela UI real (modal)
+  await page.evaluate(() => { const p = DB.companies[0].projects[0]; sel = { id: p.id, co: DB.companies[0], pj: p, type: "pj" }; openDrawer(findNode(p.id)); });
+  await expect(page.locator("#drawer")).toHaveClass(/open/);
+  await expect(page.locator("#drawer")).toContainText("Relações");
+  await page.locator('#drawer button:has-text("Nova relação")').click();
+  await expect(page.locator("#linkModal")).toHaveClass(/open/);
+  await page.selectOption("#linkType", "publica");
+  await page.selectOption("#linkTo", "dbg");
+  await page.fill("#linkNote", "posta os shorts");
+  await page.locator('#linkModal button:has-text("Criar relação")').click();
+
+  // no drawer do Publicador
+  await expect(page.locator("#drawer")).toContainText("publica / distribui");
+  await expect(page.locator("#drawer")).toContainText("Dragon Block");
+  // no GRAFO.md (o que a IA lê)
+  const md = await page.evaluate(() => genGrafoMd());
+  expect(md).toContain("publica / distribui");
+  expect(md).toContain("Publicador");
+  expect(md).toContain("Dragon Block");
+  expect(md).toContain("posta os shorts");
+  // aresta no mapa quando os dois nós estão à vista
+  const hasEdge = await page.evaluate(() => { expanded.add(DB.companies[0].id); expanded.add(DB.companies[1].id); return grafoEdgesHtml().includes('class="edge rel"'); });
+  expect(hasEdge, "aresta de relação desenhada no mapa").toBe(true);
+  // a relação viaja no sync (sanitizeStateForSync NÃO remove os links)
+  const kept = await page.evaluate(() => (sanitizeStateForSync().links || []).length);
+  expect(kept, "relação preservada no state.json do sync").toBeGreaterThan(0);
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);

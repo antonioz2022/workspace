@@ -154,6 +154,8 @@
   svg#edges{position:absolute; left:0; top:0; width:10px; height:10px; overflow:visible; pointer-events:none}
   .edge{fill:none; stroke-width:2; opacity:.5}
   .edge.dim{opacity:.18}
+  .edge.rel{stroke:var(--ac2); stroke-width:1.6; stroke-dasharray:5 6; opacity:.5}
+  .edge-label{fill:var(--ac2); font-family:var(--mono); font-size:10px; opacity:.72; pointer-events:none}
 
   /* ===== nós ===== */
   .node{position:absolute; transform:translate(-50%,-50%); display:flex; flex-direction:column; align-items:center; gap:8px; cursor:pointer; user-select:none; z-index:3; transition:filter .2s}
@@ -580,6 +582,16 @@
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveCo()">Salvar</button></div>
 </div></div>
 
+<div class="overlay" id="linkModal"><div class="modal">
+  <h3>🕸 Nova relação</h3>
+  <div style="font-size:12px;color:var(--tx3);margin:-4px 0 10px">Liga este nó a outro do workspace. Vira dado no grafo e vai pra brain (GRAFO.md + INDEX) pras IAs cruzarem contexto.</div>
+  <div class="f"><label>De</label><div id="linkFromLabel" style="padding:8px 0;font-weight:600;color:var(--tx2)"></div></div>
+  <div class="f"><label>Relação</label><select id="linkType"></select></div>
+  <div class="f"><label>Para</label><select id="linkTo"></select></div>
+  <div class="f"><label>Nota (opcional)</label><input id="linkNote" placeholder="ex.: posta os shorts do mod; usa o mesmo worker"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveLinkUi()">Criar relação</button></div>
+</div></div>
+
 <div class="overlay" id="pjModal"><div class="modal">
   <h3 id="pjModalTitle">Novo projeto</h3>
   <div class="f-row">
@@ -878,6 +890,7 @@ function hardenDB(db){
     }
   }
   if(db.settings && Array.isArray(db.settings.providers)) for(const pr of db.settings.providers) pr.id=safeId(pr.id);
+  if(Array.isArray(db.links)) for(const l of db.links){ l.id=safeId(l.id); if(typeof l.type!=="string") l.type="relacionado"; }
   return db;
 }
 function migrate(db){
@@ -902,6 +915,11 @@ function migrate(db){
       p.context = p.context || "";
     }));
     db.version=5;
+  }
+  // v6 (04/07): grafo de conhecimento — relações tipadas entre nós (empresa/projeto/serviço)
+  if(db.version < 6){
+    db.links = db.links || [];
+    db.version=6;
   }
   return hardenDB(db); // toda entrada (load/pull) passa pela higiene
 }
@@ -996,6 +1014,7 @@ function render(){
       });
     }
   });
+  if(typeof grafoEdgesHtml==="function") edgesHtml += grafoEdgesHtml();   // 🕸 relações do grafo
   edgesEl.innerHTML = edgesHtml;
   nodesEl.innerHTML = nodesHtml;
   newborn.clear();
@@ -1253,6 +1272,152 @@ function handleClick(id, type){
   save(); render(); openDrawer(f);
 }
 
+/* ===== 🕸 Grafo de conhecimento — relações tipadas entre empresas/projetos/serviços =====
+   A árvore (empresa → projeto → serviço) vira GRAFO: arestas nomeadas ligam nós de
+   qualquer parte do workspace (ex.: "Publicador Social publica Dragon Block Galactic",
+   "Córtex hospeda o Vigia da Pousada"). As relações são DADOS (`DB.links`) — viajam no
+   state.json, aparecem no mapa e vão pra Brain (GRAFO.md + INDEX) pras IAs cruzarem
+   contexto sem re-derivar tudo lendo. `DB.links[]` = {id, from, to, type, note}. */
+let brainLinksDirty=false;   // muda uma relação → regenera INDEX + GRAFO no cérebro
+const LINK_TYPES=[
+  {id:"depende",    label:"depende de",           dir:true},
+  {id:"hospeda",    label:"hospeda / é infra de", dir:true},
+  {id:"integra",    label:"integra / usa",        dir:true},
+  {id:"publica",    label:"publica / distribui",  dir:true},
+  {id:"deriva",     label:"deriva de / é parte de",dir:true},
+  {id:"compartilha",label:"compartilha com",      dir:false},
+  {id:"relacionado",label:"relacionado a",        dir:false},
+];
+function linkType(id){ return LINK_TYPES.find(x=>x.id===id)||{id, label:id, dir:false}; }
+function linkTypeLabel(id){ return linkType(id).label; }
+function linkTypeDir(id){ return linkType(id).dir; }
+
+/* índice de TODOS os nós do workspace (empresa/projeto/serviço), por id */
+function graphNodes(){
+  const out=[];
+  for(const c of DB.companies){
+    out.push({id:c.id, kind:"co", name:c.name, co:c, x:c.x, y:c.y, label:c.name});
+    for(const p of (c.projects||[])){
+      out.push({id:p.id, kind:"pj", name:p.name, co:c, pj:p, x:p.x, y:p.y, label:`${p.name} · ${c.name}`});
+      for(const a of (p.apps||[])) out.push({id:a.id, kind:"ap", name:a.name, co:c, pj:p, ap:a, x:a.x, y:a.y, label:`${a.name} · ${p.name}`});
+    }
+  }
+  return out;
+}
+function graphNode(id){ return graphNodes().find(n=>n.id===id)||null; }
+const kindIcon=k=>k==="co"?"🏢":k==="pj"?"🚀":"🔌";
+const kindName=k=>k==="co"?"empresa":k==="pj"?"projeto":"serviço";
+function nodeVisibleG(n){
+  if(!n) return false;
+  if(n.kind==="co") return true;
+  if(n.kind==="pj") return expanded.has(n.co.id);
+  return expanded.has(n.co.id) && expanded.has(n.pj.id);   // serviço
+}
+function linksOf(id){ return (DB.links||[]).filter(l=>l.from===id||l.to===id); }
+function addLinkData(from,to,type,note){
+  if(!from||!to||from===to) return false;
+  DB.links=DB.links||[];
+  if(DB.links.some(l=>l.from===from&&l.to===to&&l.type===type)) return false;   // sem duplicata exata
+  DB.links.push({id:uid(), from, to, type:type||"relacionado", note:(note||"").trim()});
+  brainLinksDirty=true; save(); if(typeof queueBrainPush==="function") queueBrainPush(); return true;
+}
+function delLinkData(id){ DB.links=(DB.links||[]).filter(l=>l.id!==id); brainLinksDirty=true; save(); if(typeof queueBrainPush==="function") queueBrainPush(); }
+
+/* arestas do grafo no mapa: só desenha quando OS DOIS nós estão à vista (pai expandido) */
+function grafoEdgesHtml(){
+  const links=DB.links||[]; if(!links.length) return "";
+  let out="";
+  for(const l of links){
+    const a=graphNode(l.from), b=graphNode(l.to);
+    if(!a||!b || !nodeVisibleG(a) || !nodeVisibleG(b)) continue;
+    if(a.x==null||b.x==null) continue;
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    out+=`<path class="edge rel" d="M ${a.x} ${a.y} L ${b.x} ${b.y}"><title>${esc(linkTypeLabel(l.type))}${l.note?" — "+esc(l.note):""}</title></path>`;
+    out+=`<text class="edge-label" x="${mx}" y="${my-4}" text-anchor="middle">${esc(linkTypeLabel(l.type))}</text>`;
+  }
+  return out;
+}
+
+/* seção "🕸 Relações" no drawer (empresa/projeto/serviço) */
+function relationsSectionHtml(id){
+  const links=linksOf(id);
+  const rows=links.map(l=>{
+    const isFrom=l.from===id, other=graphNode(isFrom?l.to:l.from), dir=linkTypeDir(l.type);
+    const arrow = dir ? (isFrom?"→":"←") : "↔";
+    const oName = other?esc(other.name):"(nó removido)";
+    const oKind = other?` <span style="color:var(--tx3);font-size:11px">(${kindName(other.kind)})</span>`:"";
+    return `<div class="mini-item" style="cursor:default">
+      <span class="mi-emoji" title="${dir?(isFrom?"deste → outro":"outro → deste"):"mútua"}">${arrow}</span>
+      <span style="flex:1;min-width:0"><b>${esc(linkTypeLabel(l.type))}</b> ${oName}${oKind}${l.note?`<br><span style="color:var(--tx3);font-size:11px">${esc(l.note)}</span>`:""}</span>
+      ${other?`<span class="arrow" title="ir até o nó" onclick="closeDrawer();jumpTo('${other.id}')" style="cursor:pointer">↗</span>`:""}
+      <span class="x" title="remover relação" onclick="delLinkUi('${l.id}')">✕</span>
+    </div>`;
+  }).join("");
+  return `<div class="dr-sec">🕸 Relações <span style="font-weight:400;font-size:11px;color:var(--tx3)">— conexões com outros projetos, empresas e serviços</span></div>
+    ${links.length?`<div class="mini-list">${rows}</div>`:`<div class="dr-desc" style="color:var(--tx3)">Nenhuma relação ainda. Ligue este nó a outro do workspace (ex.: "publica", "hospeda", "depende de") — as IAs passam a enxergar a conexão.</div>`}
+    <div style="margin-top:8px"><button class="btn sm" onclick="openLinkForm('${id}')">＋ Nova relação</button></div>`;
+}
+
+/* modal de nova relação */
+let linkFromId=null;
+function openLinkForm(fromId){
+  const from=graphNode(fromId); if(!from) return;
+  linkFromId=fromId;
+  document.getElementById("linkFromLabel").textContent=`${kindIcon(from.kind)} ${from.label||from.name}`;
+  document.getElementById("linkType").innerHTML=LINK_TYPES.map(t=>`<option value="${t.id}">${esc(t.label)}</option>`).join("");
+  const others=graphNodes().filter(n=>n.id!==fromId);
+  document.getElementById("linkTo").innerHTML = others.length
+    ? others.map(n=>`<option value="${esc(n.id)}">${kindIcon(n.kind)} ${esc(n.label||n.name)}</option>`).join("")
+    : `<option value="">(nenhum outro nó no workspace)</option>`;
+  document.getElementById("linkNote").value="";
+  document.getElementById("linkModal").classList.add("open");
+}
+function saveLinkUi(){
+  const to=document.getElementById("linkTo").value, type=document.getElementById("linkType").value, note=document.getElementById("linkNote").value;
+  if(!to){ uiToast("Escolha o outro nó da relação.","warn"); return; }
+  const ok=addLinkData(linkFromId, to, type, note);
+  closeModals();
+  if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); }
+  render();
+  uiToast(ok?"Relação criada — já vai pra brain.":"Essa relação já existe.", ok?"ok":"warn");
+}
+function delLinkUi(id){ delLinkData(id); if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); } render(); }
+
+/* GRAFO.md pra Brain: as conexões viram documento que a IA lê (fecha "conexão não codificada") */
+function genGrafoMd(){
+  const nodes=graphNodes(), links=DB.links||[];
+  const nameOf=id=>{ const n=nodes.find(x=>x.id===id); return n?(n.label||n.name):"(removido)"; };
+  let out=`# 🕸 GRAFO — relações entre projetos, empresas e serviços\n\n`+
+    `> Como as coisas do workspace se conectam entre si (o que a árvore empresa→projeto não mostra).\n`+
+    `> Gerado pelo painel Córtex — não editar à mão. Comece pelo [INDEX.md](INDEX.md).\n`;
+  if(!links.length){ out+=`\n_(nenhuma relação registrada ainda)_\n`; return out; }
+  const byNode={};
+  for(const l of links){ (byNode[l.from]=byNode[l.from]||[]).push(l); (byNode[l.to]=byNode[l.to]||[]).push(l); }
+  out+=`\n## Por nó\n`;
+  for(const n of nodes){
+    const ls=byNode[n.id]; if(!ls||!ls.length) continue;
+    out+=`\n### ${kindIcon(n.kind)} ${n.label||n.name}\n`;
+    for(const l of ls){
+      const isFrom=l.from===n.id, other=isFrom?l.to:l.from, dir=linkTypeDir(l.type);
+      const rel = dir ? (isFrom?`→ ${linkTypeLabel(l.type)}`:`← ${linkTypeLabel(l.type)}`) : `↔ ${linkTypeLabel(l.type)}`;
+      out+=`- ${rel} **${nameOf(other)}**${l.note?` — ${l.note}`:""}\n`;
+    }
+  }
+  out+=`\n## Todas as relações (${links.length})\n`;
+  for(const l of links) out+=`- ${nameOf(l.from)} — *${linkTypeLabel(l.type)}* → ${nameOf(l.to)}${l.note?` (${l.note})`:""}\n`;
+  return out;
+}
+/* linha de relações de um nó pro INDEX.md (panorama já mostra as conexões) */
+function indexRelLine(id){
+  const ls=linksOf(id); if(!ls.length) return "";
+  const parts=ls.map(l=>{
+    const isFrom=l.from===id, other=graphNode(isFrom?l.to:l.from), dir=linkTypeDir(l.type);
+    const nm=other?(other.name):"(removido)";
+    const rel=dir?(isFrom?linkTypeLabel(l.type):"← "+linkTypeLabel(l.type)):linkTypeLabel(l.type);
+    return `${rel} ${nm}`;
+  });
+  return `- **Relações**: ${parts.join(" · ")}\n`;
+}
 /* ================= drawer ================= */
 function openDrawer(f){
   const d=document.getElementById("drawer");
@@ -1279,6 +1444,7 @@ function openDrawer(f){
           </div>`).join("") || '<div class="dr-desc" style="color:var(--tx3)">nenhum projeto</div>'}
       </div>
       <div style="margin-top:14px"><button class="btn sm primary" onclick="openPjModalFor('${c.id}')">＋ Novo projeto</button></div>
+      ${typeof relationsSectionHtml==="function"?relationsSectionHtml(c.id):""}
       ${briefSectionHtml(c.id)}`;
     foot.innerHTML=`
       <button class="btn" onclick="openCoModal('${c.id}')">✎ Editar</button>
@@ -1309,6 +1475,7 @@ function openDrawer(f){
       <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">Converse com qualquer modelo (grátis, barato ou local). Ela já conhece a memória, os serviços e as pendências deste projeto.</div>
       ${(p.chats||[]).length ? `<div class="mini-list">`+p.chats.map(ch=>`<div class="mini-item" onclick="openChat('${p.id}','${ch.id}')"><span class="mi-emoji">💬</span>${esc(ch.title||"novo chat")}<span class="arrow">→</span></div>`).join("")+`</div>` : ""}
       <div style="margin-top:${(p.chats||[]).length?"8px":"0"}"><button class="btn sm primary" onclick="newChat('${p.id}')">＋ Novo chat</button></div>
+      ${typeof relationsSectionHtml==="function"?relationsSectionHtml(p.id):""}
       <div class="dr-sec">Serviços</div>
       <div class="mini-list">
         ${p.apps.map(a=>`
@@ -1372,7 +1539,8 @@ function openDrawer(f){
         <div style="display:flex; gap:9px; flex-wrap:wrap">
           ${dashU?`<a class="link" href="${esc(dashU)}" target="_blank" rel="noopener noreferrer">Abrir painel ↗</a>`:""}
           ${urlU?`<a class="link" href="${esc(urlU)}" target="_blank" rel="noopener noreferrer">Abrir serviço ↗</a>`:""}
-        </div>`:""}`;
+        </div>`:""}
+      ${typeof relationsSectionHtml==="function"?relationsSectionHtml(a.id):""}`;
     foot.innerHTML=`
       <button class="btn" onclick="openAppModalFor('${f.pj.id}','${a.id}')">✎ Editar</button>
       <button class="btn ghost" onclick="delApp('${a.id}')">Excluir serviço</button>`;
@@ -3390,6 +3558,7 @@ function genIndexMd(){
     const cs=slug(c.name);
     out+=`\n## ${c.name}${c.desc?` — ${c.desc}`:""}\n`;
     out+=`Perfil: [brain/${cs}/empresa.md](brain/${cs}/empresa.md) · Brand kit: [brain/${cs}/brand/](brain/${cs}/brand/)\n`;
+    if(typeof indexRelLine==="function") out+=indexRelLine(c.id);
     for(const p of c.projects){
       const d=brainDirOf(c,p);
       out+=`\n### ${p.name} (${p.status||"ativo"})\n`;
@@ -3404,8 +3573,10 @@ function genIndexMd(){
       if(links.length) out+=`- **Serviços**: ${links.join(" · ")}\n`;
       const ops=(p.apps||[]).filter(a=>a.ops||a.kind).map(a=>a.name);
       if(ops.length) out+=`- **Serviços operáveis** (runbook no projeto.md): ${ops.join(", ")}\n`;
+      if(typeof indexRelLine==="function") out+=indexRelLine(p.id);
     }
   }
+  if((DB.links||[]).length) out+=`\n> 🕸 Relações entre projetos/empresas/serviços: veja [GRAFO.md](GRAFO.md).\n`;
   out+=`\n---\n\n- \`state.json\` — estado do painel Workspace (uso interno do app)\n`+
     `- Painel público (interface): repo \`antonioz2022/workspace\` → ${site}\n`;
   return out;
@@ -3422,15 +3593,16 @@ function queueBrainPush(){
     if(c._coDirty) queuedBrainCids.add(c.id);
     for(const p of c.projects) if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
   }
-  if(!queuedBrainPids.size && !queuedBrainCids.size) return;
+  if(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty) return;
   clearTimeout(brainPushTimer);
   brainPushTimer=setTimeout(flushBrainPush, 4500);
 }
 async function flushBrainPush(){
-  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size)) return;
+  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty)) return;
   brainPushing=true;
   const pids=[...queuedBrainPids]; queuedBrainPids.clear();
   const cids=[...queuedBrainCids]; queuedBrainCids.clear();
+  const linksWere=brainLinksDirty; brainLinksDirty=false;   // relações mudaram → regenera GRAFO
   try{
     brainBadge("☁ salvando no cérebro…");
     let touched=false;
@@ -3448,10 +3620,13 @@ async function flushBrainPush(){
       c._coDirty=false; touched=true;
     }
     await putBrainFile("INDEX.md", genIndexMd(), "brain: INDEX atualizado");
+    if(typeof genGrafoMd==="function" && (linksWere || (DB.links||[]).length))
+      await putBrainFile("GRAFO.md", genGrafoMd(), "brain: GRAFO (relações) atualizado");
     if(touched) save();   // persiste as flags limpas
     brainBadge("☁ salvo no cérebro "+hhmm(), true);
   }catch(e){
     pids.forEach(id=>queuedBrainPids.add(id)); cids.forEach(id=>queuedBrainCids.add(id));
+    if(linksWere) brainLinksDirty=true;
     brainBadge("☁ falha: "+(e.message||e), false);
   }
   brainPushing=false;

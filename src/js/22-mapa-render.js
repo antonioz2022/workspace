@@ -42,6 +42,7 @@ function render(){
       });
     }
   });
+  if(typeof grafoEdgesHtml==="function") edgesHtml += grafoEdgesHtml();   // 🕸 relações do grafo
   edgesEl.innerHTML = edgesHtml;
   nodesEl.innerHTML = nodesHtml;
   newborn.clear();

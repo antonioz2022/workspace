@@ -132,6 +132,16 @@
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveCo()">Salvar</button></div>
 </div></div>
 
+<div class="overlay" id="linkModal"><div class="modal">
+  <h3>🕸 Nova relação</h3>
+  <div style="font-size:12px;color:var(--tx3);margin:-4px 0 10px">Liga este nó a outro do workspace. Vira dado no grafo e vai pra brain (GRAFO.md + INDEX) pras IAs cruzarem contexto.</div>
+  <div class="f"><label>De</label><div id="linkFromLabel" style="padding:8px 0;font-weight:600;color:var(--tx2)"></div></div>
+  <div class="f"><label>Relação</label><select id="linkType"></select></div>
+  <div class="f"><label>Para</label><select id="linkTo"></select></div>
+  <div class="f"><label>Nota (opcional)</label><input id="linkNote" placeholder="ex.: posta os shorts do mod; usa o mesmo worker"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveLinkUi()">Criar relação</button></div>
+</div></div>
+
 <div class="overlay" id="pjModal"><div class="modal">
   <h3 id="pjModalTitle">Novo projeto</h3>
   <div class="f-row">

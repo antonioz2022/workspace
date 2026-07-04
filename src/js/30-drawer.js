@@ -24,6 +24,7 @@ function openDrawer(f){
           </div>`).join("") || '<div class="dr-desc" style="color:var(--tx3)">nenhum projeto</div>'}
       </div>
       <div style="margin-top:14px"><button class="btn sm primary" onclick="openPjModalFor('${c.id}')">＋ Novo projeto</button></div>
+      ${typeof relationsSectionHtml==="function"?relationsSectionHtml(c.id):""}
       ${briefSectionHtml(c.id)}`;
     foot.innerHTML=`
       <button class="btn" onclick="openCoModal('${c.id}')">✎ Editar</button>
@@ -54,6 +55,7 @@ function openDrawer(f){
       <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">Converse com qualquer modelo (grátis, barato ou local). Ela já conhece a memória, os serviços e as pendências deste projeto.</div>
       ${(p.chats||[]).length ? `<div class="mini-list">`+p.chats.map(ch=>`<div class="mini-item" onclick="openChat('${p.id}','${ch.id}')"><span class="mi-emoji">💬</span>${esc(ch.title||"novo chat")}<span class="arrow">→</span></div>`).join("")+`</div>` : ""}
       <div style="margin-top:${(p.chats||[]).length?"8px":"0"}"><button class="btn sm primary" onclick="newChat('${p.id}')">＋ Novo chat</button></div>
+      ${typeof relationsSectionHtml==="function"?relationsSectionHtml(p.id):""}
       <div class="dr-sec">Serviços</div>
       <div class="mini-list">
         ${p.apps.map(a=>`
@@ -117,7 +119,8 @@ function openDrawer(f){
         <div style="display:flex; gap:9px; flex-wrap:wrap">
           ${dashU?`<a class="link" href="${esc(dashU)}" target="_blank" rel="noopener noreferrer">Abrir painel ↗</a>`:""}
           ${urlU?`<a class="link" href="${esc(urlU)}" target="_blank" rel="noopener noreferrer">Abrir serviço ↗</a>`:""}
-        </div>`:""}`;
+        </div>`:""}
+      ${typeof relationsSectionHtml==="function"?relationsSectionHtml(a.id):""}`;
     foot.innerHTML=`
       <button class="btn" onclick="openAppModalFor('${f.pj.id}','${a.id}')">✎ Editar</button>
       <button class="btn ghost" onclick="delApp('${a.id}')">Excluir serviço</button>`;

@@ -20,6 +20,7 @@ function genIndexMd(){
     const cs=slug(c.name);
     out+=`\n## ${c.name}${c.desc?` — ${c.desc}`:""}\n`;
     out+=`Perfil: [brain/${cs}/empresa.md](brain/${cs}/empresa.md) · Brand kit: [brain/${cs}/brand/](brain/${cs}/brand/)\n`;
+    if(typeof indexRelLine==="function") out+=indexRelLine(c.id);
     for(const p of c.projects){
       const d=brainDirOf(c,p);
       out+=`\n### ${p.name} (${p.status||"ativo"})\n`;
@@ -34,8 +35,10 @@ function genIndexMd(){
       if(links.length) out+=`- **Serviços**: ${links.join(" · ")}\n`;
       const ops=(p.apps||[]).filter(a=>a.ops||a.kind).map(a=>a.name);
       if(ops.length) out+=`- **Serviços operáveis** (runbook no projeto.md): ${ops.join(", ")}\n`;
+      if(typeof indexRelLine==="function") out+=indexRelLine(p.id);
     }
   }
+  if((DB.links||[]).length) out+=`\n> 🕸 Relações entre projetos/empresas/serviços: veja [GRAFO.md](GRAFO.md).\n`;
   out+=`\n---\n\n- \`state.json\` — estado do painel Workspace (uso interno do app)\n`+
     `- Painel público (interface): repo \`antonioz2022/workspace\` → ${site}\n`;
   return out;
@@ -52,15 +55,16 @@ function queueBrainPush(){
     if(c._coDirty) queuedBrainCids.add(c.id);
     for(const p of c.projects) if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
   }
-  if(!queuedBrainPids.size && !queuedBrainCids.size) return;
+  if(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty) return;
   clearTimeout(brainPushTimer);
   brainPushTimer=setTimeout(flushBrainPush, 4500);
 }
 async function flushBrainPush(){
-  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size)) return;
+  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty)) return;
   brainPushing=true;
   const pids=[...queuedBrainPids]; queuedBrainPids.clear();
   const cids=[...queuedBrainCids]; queuedBrainCids.clear();
+  const linksWere=brainLinksDirty; brainLinksDirty=false;   // relações mudaram → regenera GRAFO
   try{
     brainBadge("☁ salvando no cérebro…");
     let touched=false;
@@ -78,10 +82,13 @@ async function flushBrainPush(){
       c._coDirty=false; touched=true;
     }
     await putBrainFile("INDEX.md", genIndexMd(), "brain: INDEX atualizado");
+    if(typeof genGrafoMd==="function" && (linksWere || (DB.links||[]).length))
+      await putBrainFile("GRAFO.md", genGrafoMd(), "brain: GRAFO (relações) atualizado");
     if(touched) save();   // persiste as flags limpas
     brainBadge("☁ salvo no cérebro "+hhmm(), true);
   }catch(e){
     pids.forEach(id=>queuedBrainPids.add(id)); cids.forEach(id=>queuedBrainCids.add(id));
+    if(linksWere) brainLinksDirty=true;
     brainBadge("☁ falha: "+(e.message||e), false);
   }
   brainPushing=false;
