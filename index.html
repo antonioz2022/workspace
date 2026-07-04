@@ -412,7 +412,7 @@
     <div class="f"><label>Nome</label><input id="coName"></div>
   </div>
   <div class="f"><label>Descrição curta</label><input id="coDesc"></div>
-  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🧬 Perfil pra IA <span style="font-weight:400;color:var(--tx3)">(opcional — alimenta a brain)</span></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🧬 Perfil pra IA <span style="font-weight:400;color:var(--tx3)">(opcional, alimenta a brain)</span></div>
   <div class="f-row">
     <div class="f"><label>Tom de voz</label><input id="coTone" placeholder="ex.: épico, gamer"></div>
     <div class="f"><label>Público-alvo</label><input id="coAudience" placeholder="ex.: fãs de DBZ"></div>
@@ -421,7 +421,7 @@
   <div class="f"><label>Do's &amp; Don'ts</label><textarea id="coRules" rows="2" placeholder="sempre… / nunca…"></textarea></div>
   <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyProfilePrompt('co')">✨ Sugerir com IA (copia prompt)</button></div>
   <div class="f"><label>Cor</label><input id="coColor" type="color" value="#8B5CF6" style="height:44px;padding:5px"></div>
-  <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
+  <div class="f"><label>Logo (imagem opcional, substitui o emoji no mapa)</label>
     <input type="file" id="coImgFile" accept="image/*" onchange="pickLogo(event,'co')">
     <div id="coImgPrev" style="margin-top:8px"></div>
   </div>
@@ -446,9 +446,9 @@
   <div class="f"><label>Status</label>
     <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
   </div>
-  <div class="f"><label>Repositório GitHub (owner/repo — auto-sugerido; usado no modo remoto)</label><input id="pjGithub" list="ghRepoList" placeholder="ex.: antonioz2022/DragonblockGP"><datalist id="ghRepoList"></datalist></div>
-  <div class="f"><label>Pasta local no PC (opcional — entra no INDEX da brain p/ IAs)</label><input id="pjLocal" placeholder="ex.: C:\Users\anton\Desktop\Mine M\DBGP\DragonblockGP"></div>
-  <div class="f"><label>Logo (imagem — opcional, substitui o emoji no mapa)</label>
+  <div class="f"><label>Repositório GitHub (owner/repo, auto-sugerido; usado no modo remoto)</label><input id="pjGithub" list="ghRepoList" placeholder="ex.: antonioz2022/DragonblockGP"><datalist id="ghRepoList"></datalist></div>
+  <div class="f"><label>Pasta local no PC (opcional, entra no INDEX da brain p/ IAs)</label><input id="pjLocal" placeholder="ex.: C:\Users\anton\Desktop\Mine M\DBGP\DragonblockGP"></div>
+  <div class="f"><label>Logo (imagem opcional, substitui o emoji no mapa)</label>
     <input type="file" id="pjImgFile" accept="image/*" onchange="pickLogo(event,'pj')">
     <div id="pjImgPrev" style="margin-top:8px"></div>
   </div>
@@ -475,15 +475,15 @@
   </div>
 
   <div class="tabpane" id="tab-avancado">
-    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px"><b>Token manual do GitHub</b> (alternativa ao login — ex.: fine-grained com <b>Contents: read/write</b>, ou classic <code>repo</code>):</p>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px"><b>Token manual do GitHub</b> (alternativa ao login; ex.: fine-grained com <b>Contents: read/write</b>, ou classic <code>repo</code>):</p>
     <input id="ghTokenInput" type="password" placeholder="github_pat_… ou ghp_…" oninput="setGithubToken(this.value)" style="width:100%">
   </div>
 
   <div class="tabpane" id="tab-chat">
-    <h3 style="font-size:15px; margin:0 0 3px">💬 Chat com modelos (traga uma IA pro Córtex)</h3>
+    <h3 style="font-size:15px; margin:0 0 3px">💬 Conversar aqui dentro</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 12px">
-      Cole a chave de qualquer modelo — <b>grátis, barato ou local</b> — e converse com ele em qualquer projeto (botão 💬 no card do projeto). A IA já nasce sabendo a memória do projeto.
-      <span style="color:var(--tx3)"> A chave fica <b>só neste navegador</b>. É o inverso da aba 🤖 IAs (que leva o Córtex PRA sua IA).</span>
+      Cole a chave de qualquer modelo (grátis, barato ou local) e converse com ele em qualquer projeto, no botão 💬 do card. A IA já começa sabendo da memória daquele projeto.
+      <span style="color:var(--tx3)"> A chave fica <b>só neste navegador</b>. É o contrário da aba 🤖 IAs, que leva o Córtex pra sua IA.</span>
     </p>
     <div id="presetGrid"></div>
     <div id="provList" style="margin-top:14px"></div>
@@ -502,19 +502,19 @@
       </div>
       <div class="f" id="pvBaseWrap"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
       <div class="f"><label>API Key <span style="color:var(--tx3)">(deixe qualquer coisa p/ Ollama/local)</span></label><input id="pvKey" type="password" placeholder="cole a chave"></div>
-      <div class="f"><label>Modelos (vírgula — o 1º é o padrão)</label><input id="pvModels"></div>
+      <div class="f"><label>Modelos (separe por vírgula; o 1º é o padrão)</label><input id="pvModels"></div>
       <div class="modal-foot" style="margin-top:6px">
         <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
         <button class="btn primary" onclick="saveProv()">Salvar conta</button>
       </div>
     </div>
-    <p style="color:var(--tx3); font-size:11px; margin-top:14px">ⓘ O chat roda direto do navegador. Funciona com provedores CORS-friendly (Groq · Gemini · OpenRouter · DeepSeek · Anthropic · Ollama local). <b>OpenAI (api.openai.com) bloqueia chamada de navegador</b> — se der erro de CORS, use um dos grátis/locais.</p>
+    <p style="color:var(--tx3); font-size:11px; margin-top:14px">ⓘ O chat roda direto do navegador. Funciona com provedores CORS-friendly (Groq · Gemini · OpenRouter · DeepSeek · Anthropic · Ollama local). <b>OpenAI (api.openai.com) bloqueia chamada de navegador.</b> Se der erro de CORS, use um dos grátis/locais.</p>
   </div>
 
   <div class="tabpane" id="tab-ias">
-    <h3 style="font-size:15px; margin:0 0 3px">🤖 Conectar uma IA à brain</h3>
+    <h3 style="font-size:15px; margin:0 0 3px">🤖 Conectar uma IA ao cérebro</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 12px">
-      Um clique te leva pronto — a URL do conector já vai copiada. Depois é só <b>colar</b> e <b>Autorizar</b> com teu GitHub.
+      Clique e o Córtex abre a página certa, com a URL já copiada. Depois é só <b>colar</b> e <b>autorizar</b> com o seu GitHub.
     </p>
     <div id="aiDir"></div>
     <div style="display:flex; gap:8px; align-items:center; margin:14px 0 4px">
@@ -522,7 +522,7 @@
       <button class="btn sm" id="mcpCopyBtn" onclick="copyMcpUrl()">📋 Copiar URL</button>
     </div>
     <p style="color:var(--tx3); font-size:11px; margin:0 0 16px">
-      ⓘ Claude e ChatGPT não deixam um site autorizar por você (segurança) — o <b>Authorize</b> é sempre lá dentro. O botão te leva pronto pra colar.
+      ⓘ O Claude e o ChatGPT não deixam um site autorizar por você (é questão de segurança). O <b>Authorize</b> é sempre lá dentro deles; o botão só deixa tudo pronto pra colar.
     </p>
     <div class="dr-sec" style="margin-top:6px">IAs conectadas <span style="cursor:pointer;color:var(--tx3)" onclick="renderMcpConnections()">🔄</span></div>
     <div id="mcpConnList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
@@ -530,8 +530,8 @@
   <div class="tabpane" id="tab-vigia">
     <h3 style="font-size:15px; margin:0 0 4px">🛰 Vigia 24/7</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
-      O servidor pinga teus serviços a cada 5 min e te manda <b>push no celular</b> se algo cair (e quando voltar).
-      Instala o app <b>ntfy</b> (Android/iOS) → <b>Subscribe to topic</b> → usa o tópico abaixo.
+      De 5 em 5 minutos o Córtex checa os seus serviços. Se algum cair, você recebe um <b>aviso no celular</b> na hora (e outro quando voltar).
+      Baixe o app <b>ntfy</b> (Android/iOS), assine o tópico abaixo e pronto.
     </p>
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
       <input id="wdTopicInput" placeholder="tópico secreto do ntfy" oninput="setWdTopic(this.value)" style="flex:1">
@@ -546,8 +546,8 @@
   <div class="tabpane" id="tab-membros">
     <h3 style="font-size:15px; margin:0 0 4px">👥 Membros da workspace</h3>
     <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
-      Uma workspace = um repo privado. Membro = colaborador do repo: <b>Editor</b> edita mapa e brain ·
-      <b>Leitor</b> só vê · <b>Admin</b> gerencia. As IAs (Claude/ChatGPT) de cada membro ganham acesso à brain automaticamente.
+      A sua workspace é um repositório privado, e cada membro é um colaborador dele. O <b>Editor</b> edita o mapa e o cérebro,
+      o <b>Leitor</b> só visualiza, o <b>Admin</b> gerencia. As IAs de cada pessoa entram no cérebro automaticamente.
     </p>
     <div id="memberSelf" style="font-size:12px; color:var(--tx3); margin-bottom:8px">—</div>
     <div style="display:flex; gap:8px; margin-bottom:8px">
@@ -565,7 +565,7 @@
       <button class="btn sm" onclick="renderMembers()">🔄</button>
     </div>
     <p style="color:var(--tx3); font-size:11.5px; margin-top:10px">
-      🏢 <b>Enterprise:</b> crie uma Organization no GitHub e transfira o repo da brain — times, SSO e permissões finas.
+      🏢 <b>Enterprise:</b> crie uma Organization no GitHub e transfira o repo da brain para ter times, SSO e permissões finas.
       O Córtex funciona igual (só muda o owner/repo). Bônus: na org, membros podem usar token fine-grained.
     </p>
   </div>
@@ -577,7 +577,7 @@
 <div class="overlay" id="cockpitModal"><div class="modal" style="width:min(780px,94vw)">
   <h3>🎛 Cockpit de desenvolvimento</h3>
   <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">
-    Todos os projetos num relance — ordenado por quem precisa de atenção.
+    Todos os projetos num relance, ordenados por quem precisa de atenção.
   </p>
   <div id="cockpitBody"></div>
   <div class="modal-foot" style="justify-content:space-between">
@@ -599,11 +599,11 @@
   <div class="f"><label>Health check (pinga e mostra status)</label><input id="apHealth"></div>
   <div class="f"><label>Notas</label><textarea id="apNotes"></textarea></div>
   <div class="f"><label>Alerta</label><input id="apAlert"></div>
-  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🔧 Como a IA opera <span style="font-weight:400;color:var(--tx3)">(runbook — a IA age com as chaves do SEU ambiente)</span></div>
+  <div style="font-weight:600;font-size:13px;margin:8px 0 2px;color:var(--tx2)">🔧 Como a IA opera <span style="font-weight:400;color:var(--tx3)">(runbook: a IA age com as chaves do SEU ambiente)</span></div>
   <div class="f"><label>Tipo</label>
     <select id="apKind"><option value="">—</option><option value="github">GitHub (repo)</option><option value="render">Render (deploy)</option><option value="api">API / serviço HTTP</option><option value="crm">CRM / SaaS</option><option value="db">Banco de dados</option><option value="outro">Outro</option></select>
   </div>
-  <div class="f"><label>Runbook — como agir (deploy, logs, testar; e onde estão as chaves NO AMBIENTE, sem os valores)</label><textarea id="apOps" rows="3" placeholder="ex.: deploy = push na main (⚠ produção). Logs no dashboard. Chaves: env vars no Render / git configurado local."></textarea></div>
+  <div class="f"><label>Runbook: como agir (deploy, logs, testar; e onde estão as chaves NO AMBIENTE, sem os valores)</label><textarea id="apOps" rows="3" placeholder="ex.: deploy = push na main (⚠ produção). Logs no dashboard. Chaves: env vars no Render / git configurado local."></textarea></div>
   <div style="margin:-2px 0 8px"><button type="button" class="btn sm ghost" onclick="copyRunbookPrompt()">✨ Sugerir runbook (p/ IA)</button></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="saveApp()">Salvar</button></div>
 </div></div>
@@ -1018,14 +1018,14 @@ function openDrawer(f){
       ${teleSectionHtml(c,p, teleCache[p.id]?"ready":"loading")}
       <div class="dr-sec">🧠 Memória do projeto <span id="brainCloudBadge" style="font-weight:400; font-size:11px; color:var(--tx3); margin-left:6px"></span></div>
       <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">
-        Estado vivo do projeto. Sincroniza com <b>Workspace/brain/</b> — suas IAs
-        (Claude Code, Codex…) leem e atualizam por lá.
+        Estado vivo do projeto. Sincroniza com <b>Workspace/brain/</b>, onde suas IAs
+        (Claude Code, Codex…) leem e atualizam.
       </div>
       <textarea id="pjMemory" style="width:100%; min-height:90px; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:10px 13px; font-size:13px; font-family:'JetBrains Mono',monospace; resize:vertical">${esc(p.context||"")}</textarea>
       <div id="memBar" style="margin-top:8px"><button class="btn sm" onclick="saveMemory('${p.id}')">💾 Salvar memória</button></div>
       ${briefSectionHtml(p.id)}
       <div class="dr-sec">💬 Chat com IA</div>
-      <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">Converse com qualquer modelo (grátis, barato ou local) — ela já conhece a memória, os serviços e as pendências deste projeto.</div>
+      <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">Converse com qualquer modelo (grátis, barato ou local). Ela já conhece a memória, os serviços e as pendências deste projeto.</div>
       ${(p.chats||[]).length ? `<div class="mini-list">`+p.chats.map(ch=>`<div class="mini-item" onclick="openChat('${p.id}','${ch.id}')"><span class="mi-emoji">💬</span>${esc(ch.title||"novo chat")}<span class="arrow">→</span></div>`).join("")+`</div>` : ""}
       <div style="margin-top:${(p.chats||[]).length?"8px":"0"}"><button class="btn sm primary" onclick="newChat('${p.id}')">＋ Novo chat</button></div>
       <div class="dr-sec">Serviços</div>
@@ -1141,7 +1141,7 @@ function showLogoPrev(kind, src){
   const el=document.getElementById(kind+"ImgPrev");
   el.innerHTML = src
     ? `<img src="${src}" style="height:52px; border-radius:11px; vertical-align:middle; background:rgba(0,0,0,.3); padding:3px"> <button type="button" class="btn sm ghost" onclick="clearLogo('${kind}')">tirar logo</button>`
-    : `<span style="color:var(--tx3); font-size:12px">sem logo — usa o emoji</span>`;
+    : `<span style="color:var(--tx3); font-size:12px">sem logo, usa o emoji</span>`;
 }
 function clearLogo(kind){
   pendingLogo[kind]=null;
@@ -1446,7 +1446,7 @@ async function githubLogout(){
   // com 3 opções claras — inclui limpar os dados p/ máquina compartilhada.
   const choice=await uiDialog({
     title:"Sair da conta GitHub?",
-    message:"O acesso deste painel é removido (as IAs já conectadas continuam).\n\nEm computador compartilhado, você pode limpar os dados da workspace deste navegador — eles voltam quando você entrar de novo (ficam salvos no repo privado).",
+    message:"O acesso deste painel é removido (as IAs já conectadas continuam).\n\nEm computador compartilhado, você pode limpar os dados da workspace deste navegador. Eles voltam quando você entrar de novo (ficam salvos no repo privado).",
     buttons:[
       {label:"Cancelar", value:""},
       {label:"Só sair", value:"out", kind:"primary"},
@@ -1489,7 +1489,7 @@ async function githubLogin(){
     }
     window.open(j.verification_uri_complete,"_blank","noopener");
     card.innerHTML=`
-      <div style="font-size:12.5px;color:var(--tx2)">Abriu uma aba no GitHub — é só clicar <b>Authorize</b>. ✅</div>
+      <div style="font-size:12.5px;color:var(--tx2)">Abriu uma aba no GitHub. É só clicar <b>Authorize</b>. ✅</div>
       <div style="font-size:12px;color:var(--tx3);margin-top:6px">Se não abriu: <a href="${esc(j.verification_uri)}" target="_blank" rel="noopener" style="color:var(--ac)">${esc(j.verification_uri)}</a> e digite</div>
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <code style="font-family:var(--mono);font-size:18px;letter-spacing:2px;background:var(--glass2);padding:6px 12px;border-radius:8px">${esc(j.user_code)}</code>
@@ -1501,7 +1501,7 @@ async function githubLogin(){
 }
 function pollDeviceToken(deviceCode, interval, deadline){
   ghDevicePoll=setTimeout(async ()=>{
-    if(Date.now()>deadline){ const w=document.getElementById("ghLoginWait"); if(w){ w.textContent="⌛ o código expirou — clique em ⚡ Entrar com GitHub de novo."; w.style.color="var(--warn)"; } return; }
+    if(Date.now()>deadline){ const w=document.getElementById("ghLoginWait"); if(w){ w.textContent="⌛ o código expirou. Clique em ⚡ Entrar com GitHub de novo."; w.style.color="var(--warn)"; } return; }
     try{
       const r=await fetch(mcpUrl()+"/panel/device/poll",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({device_code:deviceCode})});
       const j=await r.json();
@@ -1509,7 +1509,7 @@ function pollDeviceToken(deviceCode, interval, deadline){
         setGithubToken(j.access_token);
         if(j.login) localStorage.setItem(LS_KEY+"-ghlogin", j.login);
         const card=document.getElementById("ghLoginCard");
-        if(card) card.innerHTML=`<div style="color:var(--ok);font-size:13px">✓ conectado como <b>@${esc(j.login||"você")}</b> — já pode gerenciar tudo por aqui.</div>`;
+        if(card) card.innerHTML=`<div style="color:var(--ok);font-size:13px">✓ conectado como <b>@${esc(j.login||"você")}</b>. Já pode gerenciar tudo por aqui.</div>`;
         renderAccHeader(); renderMembers(); renderWorkspaceState();
         return;
       }
@@ -1529,7 +1529,7 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
     let txt=DB.settings.githubToken?"✓ token salvo neste navegador":"";
     if(DB.settings.githubToken && d!==null){
       const dt=new Date(parseInt(localStorage.getItem(LS_KEY+"-patexp"),10)).toLocaleDateString("pt-BR");
-      txt+=` · expira em ${d} dia(s) (${dt})${d<10?" — RENOVA LOGO":""}`;
+      txt+=` · expira em ${d} dia(s) (${dt})${d<10?", RENOVA LOGO":""}`;
     }
     gs.textContent=txt; gs.style.color=(d!==null&&d<10)?"var(--warn)":"var(--tx3)";
   }
@@ -1566,7 +1566,7 @@ function renderProvs(){
       </div>
       <button class="btn sm" onclick="openProvForm(null,'${p.id}')">✎</button>
       <button class="btn sm ghost" onclick="delProv('${p.id}')">✕</button>
-    </div>`).join("") || '<div style="color:var(--tx3); font-size:13px; padding:6px 2px">nenhuma conta ainda — adiciona a primeira 👇</div>';
+    </div>`).join("") || '<div style="color:var(--tx3); font-size:13px; padding:6px 2px">nenhuma conta ainda. Adicione a primeira 👇</div>';
 }
 function openProvForm(preset, id){
   editingProv=id||null;
@@ -1618,7 +1618,7 @@ const getChat = () => {
 };
 
 function newChat(pjId){
-  if(!PROVS().length){ uiToast("Adicione uma conta de IA primeiro — escolha um modelo grátis/local em 💬 Chat.", "warn"); openAiModal(); switchAccTab("chat"); return; }
+  if(!PROVS().length){ uiToast("Adicione uma conta de IA primeiro. Escolha um modelo grátis/local em 💬 Chat.", "warn"); openAiModal(); switchAccTab("chat"); return; }
   const f=findNode(pjId);
   const prov=PROVS()[0];
   const chat={ id:uid(), title:"", providerId:prov.id, model:prov.models[0], messages:[], ctx:[] };
@@ -1693,7 +1693,7 @@ function renderCtxBar(){
   DB.companies.forEach(c=>c.projects.forEach(p=>{
     if(p.id===f.pj.id) return;
     const on=(chat.ctx||[]).includes(p.id);
-    chips+=`<span class="ctxchip ${on?"on":""}" onclick="toggleCtx('${p.id}')" title="${on?"conectado — a IA lê a memória deste projeto":"desligado — não gasta token"}">${esc(c.name)} · ${esc(p.name)}</span>`;
+    chips+=`<span class="ctxchip ${on?"on":""}" onclick="toggleCtx('${p.id}')" title="${on?"conectado: a IA lê a memória deste projeto":"desligado: não gasta token"}">${esc(c.name)} · ${esc(p.name)}</span>`;
   }));
   chips+=`<span style="margin-left:auto; font-size:10.5px; color:var(--tx3); font-family:'JetBrains Mono',monospace" id="ctxEst"></span>`;
   el.innerHTML=chips;
@@ -1774,7 +1774,7 @@ async function sendChat(){
   const inp=document.getElementById("chInput");
   const text=inp.value.trim(); if(!text) return;
   const prov=getProv(g.chat.providerId);
-  if(!prov){ alert("A conta deste chat foi removida — escolhe outra no seletor do topo."); return; }
+  if(!prov){ alert("A conta deste chat foi removida. Escolha outra no seletor do topo."); return; }
 
   inp.value="";
   g.chat.messages.push({role:"user", content:text});
@@ -1815,7 +1815,7 @@ async function sendChat(){
 async function readSSE(resp, onEvent){
   if(!resp.ok){
     let msg="HTTP "+resp.status;
-    try{ const j=await resp.json(); msg += " — "+(j.error&&(j.error.message||j.error.type)||JSON.stringify(j)).slice(0,300); }catch(e){}
+    try{ const j=await resp.json(); msg += ": "+(j.error&&(j.error.message||j.error.type)||JSON.stringify(j)).slice(0,300); }catch(e){}
     throw new Error(msg);
   }
   const reader=resp.body.getReader();
@@ -1887,8 +1887,8 @@ function renderDock(){
     if(sel) sel.style.display="none"; setComposer(false);
     body.innerHTML=`<div style="margin:auto; text-align:center; color:var(--tx2); font-size:13.5px; padding:22px; line-height:1.6">
       <div style="font-size:34px; margin-bottom:6px">💬</div>
-      <b style="color:var(--tx)">Converse com a IA aqui.</b><br>
-      Escolha um modelo — <b>grátis, barato ou local</b> — e cole a API key. Ele já conhece a tua workspace.
+      <b style="color:var(--tx)">Converse com uma IA por aqui.</b><br>
+      Conecte um modelo (tem opção <b>grátis</b>) e ele já entra sabendo dos seus projetos.
       <div style="margin-top:16px"><button class="btn sm primary" onclick="openAiModal();switchAccTab('chat')">Escolher IA →</button></div></div>`;
     return;
   }
@@ -1902,7 +1902,7 @@ function renderDock(){
   const msgs=d.messages||[];
   body.innerHTML = msgs.length
     ? msgs.map(m=> m.role==="user"?`<div class="bub user">${esc(m.content)}</div>`:`<div class="bub ai">${mdlite(m.content)}</div>`).join("")
-    : `<div style="margin:auto;text-align:center;color:var(--tx3);font-size:13px;padding:22px">Oi! Sou o copiloto do teu Córtex.<br>Pergunta o que quiser sobre teus projetos. 🧠</div>`;
+    : `<div style="margin:auto;text-align:center;color:var(--tx3);font-size:13px;padding:22px">Pronto pra ajudar.<br>Pergunte o que quiser sobre os seus projetos. 🧠</div>`;
   body.scrollTop=body.scrollHeight;
 }
 async function dockSend(){
@@ -2102,7 +2102,7 @@ async function syncBrain(){
     setTimeout(()=>setBrainBtn("🧠 Sincronizar"), 2600);
   }catch(e){
     setBrainBtn("🧠 Conectar cérebro");
-    alert("Cérebro: falha ao sincronizar — "+(e.message||e));
+    alert("Cérebro: falha ao sincronizar. "+(e.message||e));
   }
 }
 
@@ -2266,23 +2266,23 @@ function teleInner(c,p,state){
   const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
   if(state==="loading") return `<div class="dr-desc" style="color:var(--tx3)">lendo o projeto…</div>`;
   if(state==="none" || !t) return `<div style="font-size:12px;color:var(--tx3);margin:-2px 0 8px">
-      Aponte pra pasta do projeto (o repositório) pra ver commit, branch, features e pendências reais — sem pedir pra ninguém.
+      Aponte pra pasta do projeto (o repositório) pra ver commit, branch, features e pendências reais, sem pedir pra ninguém.
     </div><button class="btn sm primary" onclick="connectProjDir('${p.id}')">🔗 Conectar pasta do projeto</button>`;
   const g=t.git, s=t.specs, chips=[];
   chips.push(t.source==="github"
-    ? `<span class="chip" title="lido da API do GitHub — estado remoto (pushed)">☁ GitHub</span>`
-    : `<span class="chip" title="lido da pasta local — working tree ao vivo">📁 local</span>`);
+    ? `<span class="chip" title="lido da API do GitHub: estado remoto (pushed)">☁ GitHub</span>`
+    : `<span class="chip" title="lido da pasta local: working tree ao vivo">📁 local</span>`);
   if(g){ chips.push(`<span class="chip" title="branch">⎇ ${esc(g.branch||"—")}</span>`); if(g.commits!=null) chips.push(`<span class="chip">${g.commits} commit(s)</span>`); }
   if(s) chips.push(`<span class="chip" title="pasta specs/">${s.count} features · atual ${esc(s.last||"—")}</span>`);
   chips.push(`<span class="chip">${openN}/${totN} pendências abertas</span>`);
   const commitLine = g
     ? `<div style="font-size:12.5px;color:var(--tx2);margin:2px 0 8px"><b>último commit</b> ${agoStr(g.ts)}${g.hash?` · <code style="color:var(--tx3)">${esc(g.hash)}</code>`:""}<br><span style="color:var(--tx)">${esc(g.msg)}</span></div>`
-    : `<div class="dr-desc" style="color:var(--tx3)">pasta sem <code>.git</code> — sem histórico de commits</div>`;
+    : `<div class="dr-desc" style="color:var(--tx3)">pasta sem <code>.git</code>, sem histórico de commits</div>`;
   return `${commitLine}<div class="chips" style="margin-bottom:8px">${chips.join("")}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <button class="btn sm" onclick="refreshProjClick('${p.id}')">🔄 Atualizar do projeto</button>
       <button class="btn sm primary" id="copyCtxBtn" onclick="copyProjectContext('${p.id}')" title="Copia commits + pendências + memória atual pra colar no Claude Code / Codex">📋 Copiar contexto p/ IA</button>
-      <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório — versionado no git, alimentado por qualquer IA">🧩 Brain no repo</button>
+      <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório, versionado no git e alimentado por qualquer IA">🧩 Brain no repo</button>
       <button class="btn sm ghost" onclick="disconnectProjDir('${p.id}')" title="esquecer a pasta">⊘</button>
     </div>${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
 }
@@ -2453,7 +2453,7 @@ async function ghPutFile(repo,path,text,sha,msg){
     headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
     body:JSON.stringify(body)});
   if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
-    throw new Error("GitHub "+r.status+(r.status===403?" — o token precisa de Contents: read AND write no repo de estado":r.status===404?" — repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
+    throw new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
   return r.json();
 }
 async function pushState(){
@@ -2477,7 +2477,7 @@ async function pushState(){
     statePushing=false;
     const pulled=await pullState({force:true}).catch(()=>false);
     stateBadge(pulled
-      ? "☁ conflito: alguém sincronizou antes — puxei a versão nova (revisa e edita de novo se precisar)"
+      ? "☁ conflito: alguém sincronizou antes. Puxei a versão nova (revise e edite de novo se precisar)"
       : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
   }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); statePushing=false; }
   statePushing=false;
@@ -2512,7 +2512,7 @@ async function pullState({force=false}={}){
   return true;
 }
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
-  stateBadge(stateSyncOn()?"☁ sync ligada — salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
+  stateBadge(stateSyncOn()?"☁ sync ligada: salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
 
 /* ===== 🚀 Workspace no automático: criar/conectar/apagar pelo Córtex ===== */
 function renderWorkspaceState(){
@@ -2538,7 +2538,7 @@ function renderWorkspaceState(){
         <button class="btn sm" onclick="disconnectWorkspace()">Desconectar</button>
         <span id="wsAdminZone" style="font-size:11px;color:var(--tx3)">verificando permissão…</span>
       </div>
-      <p style="font-size:11px;color:var(--tx3);margin:8px 0 0">Desconectar = só some daqui (repo fica salvo). Apagar = remove o repo do GitHub de vez — só o admin da workspace pode.</p>
+      <p style="font-size:11px;color:var(--tx3);margin:8px 0 0">Desconectar = só some daqui (repo fica salvo). Apagar = remove o repo do GitHub de vez, e só o admin da workspace pode.</p>
     </details>`;
   if(stateSyncOn()) stateBadge("☁ sincronizada · salva sozinho ao editar", true);
   checkWsAdmin();
@@ -2561,7 +2561,7 @@ async function createWorkspace(){
   try{
     const r=await fetch("https://api.github.com/user/repos",{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
       body:JSON.stringify({name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})});
-    if(r.status===422){ uiToast("Já existe um repo com esse nome — tente outro.","warn"); return; }
+    if(r.status===422){ uiToast("Já existe um repo com esse nome. Tente outro.","warn"); return; }
     if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||("HTTP "+r.status)); }
     const j=await r.json();
     setStateRepo(j.full_name);
@@ -2576,14 +2576,14 @@ async function connectExistingWorkspace(){
   const login=localStorage.getItem(LS_KEY+"-ghlogin")||"";
   const repo=await uiPrompt({title:"Conectar workspace existente", message:"Cole o repo (owner/repo) que já tem sua workspace:", value:login?login+"/":"", placeholder:"owner/repo", okLabel:"Conectar"});
   if(repo===null) return;
-  if(!/^[^/\s]+\/[^/\s]+$/.test(repo)){ uiToast("Formato inválido — use owner/repo.","warn"); return; }
+  if(!/^[^/\s]+\/[^/\s]+$/.test(repo)){ uiToast("Formato inválido. Use owner/repo.","warn"); return; }
   setStateRepo(repo);
   const pulled=await pullState({force:true}).catch(()=>false);
   renderWorkspaceState();
-  uiToast(pulled?"Conectada — puxei a workspace ✓":"Conectada.","ok");
+  uiToast(pulled?"Conectada. Puxei a workspace ✓":"Conectada.","ok");
 }
 async function disconnectWorkspace(){
-  if(!(await uiConfirm("Desconectar a workspace deste navegador? O repo continua salvo no GitHub — dá pra reconectar depois.",{okLabel:"Desconectar"}))) return;
+  if(!(await uiConfirm("Desconectar a workspace deste navegador? O repo continua salvo no GitHub, dá pra reconectar depois.",{okLabel:"Desconectar"}))) return;
   setStateRepo(""); localStorage.removeItem(LS_KEY+"-syncat");
   renderWorkspaceState(); uiToast("Desconectada. O repo continua no GitHub.","ok");
 }
@@ -2600,7 +2600,7 @@ async function deleteWorkspace(){
   try{
     const r=await fetch("https://api.github.com/repos/"+repo,{method:"DELETE",headers:ghApiHeaders()});
     if(!r.ok && r.status!==204){ const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403?"teu token não pode apagar — re-entre com o GitHub pra pegar o novo acesso. ":"")+(j.message||("HTTP "+r.status))); }
+      throw new Error((r.status===403?"teu token não pode apagar. Re-entre com o GitHub pra pegar o novo acesso. ":"")+(j.message||("HTTP "+r.status))); }
     setStateRepo(""); localStorage.removeItem(LS_KEY+"-syncat");
     renderWorkspaceState(); uiToast("Workspace apagada do GitHub.","ok");
   }catch(e){ uiToast("Apagar: "+(e.message||e),"bad"); }
@@ -2753,7 +2753,7 @@ async function hydrateFiles(f){
       <button class="btn sm primary" onclick="document.getElementById('brainFileInput').click()">⬆ Subir arquivos</button>
       <span id="filesStatus" style="font-size:11px;color:var(--tx3)"></span>
     </div>
-    <div style="font-size:11px;color:var(--tx3);margin-top:6px">vão pro cérebro (<code>${esc(filesDir)}</code>) — IAs enxergam de lá</div>`;
+    <div style="font-size:11px;color:var(--tx3);margin-top:6px">vão pro cérebro (<code>${esc(filesDir)}</code>); as IAs enxergam de lá</div>`;
   // previews de imagem (<1MB) — GET individual devolve o base64
   filesList.forEach(async (x,i)=>{
     if(!IMG_RE.test(x.name) || x.size>1048576) return;
@@ -2773,7 +2773,7 @@ async function uploadBrainFiles(ev){
   const st=document.getElementById("filesStatus");
   let done=0;
   for(const file of files){
-    if(file.size>8*1048576){ alert(`"${file.name}" tem ${fmtSize(file.size)} — acima do limite de 8 MB, pulei.`); continue; }
+    if(file.size>8*1048576){ alert(`"${file.name}" tem ${fmtSize(file.size)}, acima do limite de 8 MB. Pulei.`); continue; }
     if(st) st.textContent=`subindo ${file.name}…`;
     try{
       const buf=await file.arrayBuffer();
@@ -2984,7 +2984,7 @@ function openCockpit(){
       const svcs=(j.config&&j.config.services)||[];
       if(!svcs.length){ el.textContent="🛰 vigia: desligado (ativa em ⚙ Contas)"; return; }
       const down=Object.entries((j.state&&j.state.services)||{}).filter(([,v])=>v&&v.ok===false).map(([k])=>k);
-      el.textContent=down.length?`🛰 vigia: 🔴 FORA DO AR — ${down.join(", ")}`:`🛰 vigia: ✅ ${svcs.length} serviço(s) no ar${j.state&&j.state.lastCheck?" · check "+agoStr(j.state.lastCheck):""}`;
+      el.textContent=down.length?`🛰 vigia: 🔴 FORA DO AR: ${down.join(", ")}`:`🛰 vigia: ✅ ${svcs.length} serviço(s) no ar${j.state&&j.state.lastCheck?" · check "+agoStr(j.state.lastCheck):""}`;
       el.style.color=down.length?"var(--warn)":"var(--tx3)";
     }catch(e){ el.textContent="🛰 vigia: status indisponível"; }
   })();
@@ -3132,7 +3132,7 @@ async function sendWatchdog(){
   const topic=(DB.settings||{}).ntfyTopic||"";
   const services=wdServices();
   if(!topic){ alert("Gera (🎲) ou cola um tópico ntfy primeiro."); return; }
-  if(!services.length){ alert("Nenhum serviço com health check cadastrado — preenche o campo 'Health check' nos serviços."); return; }
+  if(!services.length){ alert("Nenhum serviço com health check cadastrado. Preencha o campo 'Health check' nos serviços."); return; }
   set("⏳ enviando…");
   try{
     const j=await wdFetch("/admin/watchdog",{method:"POST", body:JSON.stringify({ntfyTopic:topic, services})});
@@ -3143,7 +3143,7 @@ async function sendWatchdog(){
 async function testWatchdog(){
   const b=document.getElementById("wdTestBtn"), set=s=>{ if(b) b.textContent=s; };
   set("⏳…");
-  try{ await wdFetch("/admin/watchdog/test",{method:"POST"}); set("✓ push enviado — olha o celular"); }
+  try{ await wdFetch("/admin/watchdog/test",{method:"POST"}); set("✓ push enviado. Olha o celular"); }
   catch(e){ set("⚠"); alert("Teste: "+(e.message||e)); }
   setTimeout(()=>set("🔔 Testar push"), 3200);
 }
@@ -3153,7 +3153,7 @@ async function renderWatchdog(){
   try{
     const j=await wdFetch("/admin/watchdog");
     const svcs=(j.config&&j.config.services)||[];
-    if(!svcs.length){ wdBadge("vigia desligado — envia os serviços com 📡"); return; }
+    if(!svcs.length){ wdBadge("vigia desligado. Envie os serviços com 📡"); return; }
     const st=(j.state&&j.state.services)||{};
     const down=Object.entries(st).filter(([,v])=>v&&v.ok===false).map(([k])=>k);
     const last=j.state&&j.state.lastCheck?` · último check ${agoStr(j.state.lastCheck)}`:"";
@@ -3171,7 +3171,7 @@ async function renderMembers(){
   const list=document.getElementById("membersList"), self=document.getElementById("memberSelf");
   if(!list) return;
   if(!stateSyncOn()){
-    list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">liga a sync (token + repo, acima) — a workspace É o repo de estado</div>`;
+    list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">liga a sync (token + repo, acima). A workspace É o repo de estado</div>`;
     if(self) self.textContent=""; return;
   }
   list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">carregando membros…</div>`;
@@ -3189,7 +3189,7 @@ async function renderMembers(){
         ${c.login!==(me&&me.login)?`<span class="x" title="remover da workspace" onclick="removeMember('${esc(c.login)}')">✕</span>`:""}
       </div>`).join("");
     }else{
-      rows+=`<div class="dr-desc" style="color:var(--warn)">não deu pra listar — pra GERENCIAR membros teu token precisa da permissão "Administration" no repo (ou usa a página do repo no GitHub)</div>`;
+      rows+=`<div class="dr-desc" style="color:var(--warn)">não deu pra listar. Pra gerenciar membros, teu token precisa da permissão "Administration" no repo (ou usa a página do repo no GitHub)</div>`;
     }
     let invs=null; try{ invs=await ghGet("/repos/"+stateRepo()+"/invitations"); }catch(e){ invs=null; }
     if(Array.isArray(invs)&&invs.length){
@@ -3199,7 +3199,7 @@ async function renderMembers(){
         <span class="x" title="cancelar convite" onclick="cancelInvite(${parseInt(i.id,10)||0})">✕</span>
       </div>`).join("");
     }
-    list.innerHTML=rows||`<div class="dr-desc" style="color:var(--tx3)">só você por enquanto — convida alguém acima</div>`;
+    list.innerHTML=rows||`<div class="dr-desc" style="color:var(--tx3)">só você por enquanto. Convide alguém acima</div>`;
   }catch(e){ list.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; }
 }
 async function inviteMember(){
@@ -3212,10 +3212,10 @@ async function inviteMember(){
       method:"PUT", headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
       body:JSON.stringify({permission:role})});
     if(r.status===201) alert(`Convite enviado pra @${u}! A pessoa aceita no GitHub (e-mail/notificações). Depois manda pra ela o "📋 Copiar convite" com os passos do Córtex.`);
-    else if(r.status===204) alert(`@${u} já era membro — papel atualizado.`);
+    else if(r.status===204) alert(`@${u} já era membro. Papel atualizado.`);
     else{
       const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403?'403 — teu token precisa da permissão "Administration" (read/write) no repo pra convidar. ':"HTTP "+r.status+" · ")+(j.message||""));
+      throw new Error((r.status===403?'403: teu token precisa da permissão "Administration" (read/write) no repo pra convidar. ':"HTTP "+r.status+" · ")+(j.message||""));
     }
     document.getElementById("memberUser").value="";
     renderMembers();
