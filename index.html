@@ -43,6 +43,22 @@
   .tabpane{display:none}
   .tabpane.on{display:block}
 
+  /* ===== diálogos & toasts do próprio Córtex (adeus popups do navegador) ===== */
+  .ui-ov{position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:20px; background:rgba(4,4,9,.6); backdrop-filter:blur(4px); animation:uiFade .14s ease}
+  .ui-dlg{width:min(430px,94vw); background:linear-gradient(180deg,var(--glass),rgba(16,14,26,.97)); border:1px solid var(--line2); border-radius:18px; padding:22px 22px 18px; box-shadow:0 30px 80px rgba(0,0,0,.6); animation:pop .2s cubic-bezier(.2,1.4,.4,1)}
+  .ui-dlg h4{font-family:'Sora','Inter',sans-serif; font-size:17px; font-weight:750; margin:0 0 8px}
+  .ui-dlg p{color:var(--tx2); font-size:13.5px; line-height:1.55; margin:0}
+  .ui-dlg .btns{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap; margin-top:20px}
+  .btn.danger{background:linear-gradient(135deg,#e0574a,#ff6b5e); border:none; color:#fff}
+  .btn.danger:hover{filter:brightness(1.08); color:#fff}
+  @keyframes uiFade{from{opacity:0}}
+  #uiToasts{position:fixed; left:50%; bottom:26px; transform:translateX(-50%); z-index:210; display:flex; flex-direction:column; gap:8px; align-items:center; pointer-events:none; width:min(440px,92vw)}
+  .ui-toast{pointer-events:auto; max-width:100%; background:rgba(16,14,26,.97); border:1px solid var(--line2); border-left:3px solid var(--ac); border-radius:12px; padding:11px 15px; font-size:13.5px; color:var(--tx); box-shadow:0 14px 40px rgba(0,0,0,.5); animation:toastIn .22s cubic-bezier(.2,1.3,.4,1); white-space:pre-wrap; line-height:1.45}
+  .ui-toast.ok{border-left-color:var(--ok)} .ui-toast.warn{border-left-color:var(--warn)} .ui-toast.bad{border-left-color:var(--bad)}
+  .ui-toast.out{animation:toastOut .25s ease forwards}
+  @keyframes toastIn{from{opacity:0; transform:translateY(12px)}}
+  @keyframes toastOut{to{opacity:0; transform:translateY(8px)}}
+
   /* ===== fundo ===== */
   .aurora{position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none}
   .blob{position:absolute; border-radius:50%; filter:blur(120px); opacity:.45; animation:drift 30s ease-in-out infinite alternate}
@@ -1121,9 +1137,9 @@ function saveCo(){
   }
   save(); scheduleSync(); closeModals(); render();
 }
-function delCo(id){
+async function delCo(id){
   const c=findNode(id).co;
-  if(!confirm(`Excluir "${c.name}" com todos os projetos?`)) return;
+  if(!(await uiConfirm(`Excluir "${c.name}" e todos os projetos dela? Não dá pra desfazer.`,{danger:true,okLabel:"Excluir"}))) return;
   DB.companies=DB.companies.filter(x=>x.id!==id);
   closeDrawer(); save(); render();
 }
@@ -1167,9 +1183,9 @@ function savePj(){
   }
   save(); scheduleSync(); closeModals(); render();
 }
-function delPj(id){
+async function delPj(id){
   const f=findNode(id);
-  if(!confirm(`Excluir o projeto "${f.pj.name}"?`)) return;
+  if(!(await uiConfirm(`Excluir o projeto "${f.pj.name}"?`,{danger:true,okLabel:"Excluir"}))) return;
   f.co.projects=f.co.projects.filter(x=>x.id!==id);
   closeDrawer(); save(); render();
 }
@@ -1209,9 +1225,9 @@ function saveApp(){
   }
   save(); scheduleSync(); closeModals(); render();
 }
-function delApp(id){
+async function delApp(id){
   const f=findNode(id);
-  if(!confirm(`Excluir "${f.ap.name}"?`)) return;
+  if(!(await uiConfirm(`Excluir "${f.ap.name}"?`,{danger:true,okLabel:"Excluir"}))) return;
   f.pj.apps=f.pj.apps.filter(x=>x.id!==id);
   closeDrawer(); save(); render();
 }
@@ -1267,6 +1283,48 @@ const PROV_PRESETS = {
 let editingProv=null;
 
 function patDays(){ const t=parseInt(localStorage.getItem(LS_KEY+"-patexp")||"0",10); if(!t) return null; return Math.floor((t-Date.now())/86400000); }
+/* ===== diálogos & toasts do próprio Córtex (substituem os popups do navegador) ===== */
+function uiToast(msg, kind){
+  let host=document.getElementById("uiToasts");
+  if(!host){ host=document.createElement("div"); host.id="uiToasts"; document.body.appendChild(host); }
+  const t=document.createElement("div");
+  t.className="ui-toast"+(kind?(" "+kind):"");
+  t.textContent=String(msg);
+  host.appendChild(t);
+  const life=Math.min(9000, 2800 + String(msg).length*45);
+  setTimeout(()=>{ t.classList.add("out"); setTimeout(()=>t.remove(), 260); }, life);
+}
+function uiDialog(opts){
+  opts=opts||{};
+  return new Promise(res=>{
+    const ov=document.createElement("div"); ov.className="ui-ov";
+    const dlg=document.createElement("div"); dlg.className="ui-dlg";
+    const btns=(opts.buttons&&opts.buttons.length)?opts.buttons:[{label:"OK",value:true,kind:"primary"}];
+    dlg.innerHTML=`${opts.title?`<h4>${esc(opts.title)}</h4>`:""}${opts.message?`<p>${esc(opts.message).replace(/\n/g,"<br>")}</p>`:""}<div class="btns"></div>`;
+    const row=dlg.querySelector(".btns");
+    let done=false;
+    const cancelV=(opts.cancelValue!==undefined?opts.cancelValue:null);
+    const close=v=>{ if(done)return; done=true; ov.remove(); document.removeEventListener("keydown",onKey); res(v); };
+    btns.forEach(b=>{ const el=document.createElement("button");
+      el.className="btn"+(b.kind==="primary"?" primary":b.kind==="danger"?" danger":"");
+      el.textContent=b.label; el.onclick=()=>close(b.value); row.appendChild(el); });
+    function onKey(e){ if(e.key==="Escape") close(cancelV);
+      else if(e.key==="Enter"){ const p=btns.find(b=>b.kind==="primary"||b.kind==="danger"); if(p) close(p.value); } }
+    ov.onclick=e=>{ if(e.target===ov) close(cancelV); };
+    document.addEventListener("keydown",onKey);
+    ov.appendChild(dlg); document.body.appendChild(ov);
+    const f=row.querySelector(".primary,.danger")||row.firstChild; if(f&&f.focus) f.focus();
+  });
+}
+async function uiConfirm(message, o){ o=o||{};
+  return await uiDialog({ title:o.title||"Confirmar", message,
+    buttons:[{label:o.cancelLabel||"Cancelar", value:false},
+             {label:o.okLabel||"Confirmar", value:true, kind:o.danger?"danger":"primary"}],
+    cancelValue:false });
+}
+// redireciona TODOS os alert() do app pro toast bonito — nada de popup do navegador
+window.alert=(m)=>uiToast(String(m));
+
 /* ===== ⚙ Conta & Workspace: abas + header de conta + logout ===== */
 function switchAccTab(name){
   document.querySelectorAll(".acc-tab").forEach(b=>b.classList.toggle("on", b.dataset.tab===name));
@@ -1291,16 +1349,23 @@ function renderAccHeader(){
   }
 }
 async function githubLogout(){
-  if(!confirm("Sair da conta GitHub neste navegador? O acesso deste painel é removido (as IAs já conectadas continuam).")) return;
-  // Local-first: o mapa também vive NESTE navegador. Em máquina compartilhada,
-  // sair sem limpar deixaria a workspace visível pro próximo — então pergunta.
-  const wipe=confirm("Limpar TAMBÉM os dados da workspace deste navegador?\n\n• SIM (recomendado em computador compartilhado): o mapa some daqui — volta inteiro quando você entrar de novo (está salvo no repo privado).\n• NÃO: só desconecta; o mapa continua visível neste navegador.");
+  // Local-first: o mapa vive NESTE navegador. Um modal do app (não popup nativo)
+  // com 3 opções claras — inclui limpar os dados p/ máquina compartilhada.
+  const choice=await uiDialog({
+    title:"Sair da conta GitHub?",
+    message:"O acesso deste painel é removido (as IAs já conectadas continuam).\n\nEm computador compartilhado, você pode limpar os dados da workspace deste navegador — eles voltam quando você entrar de novo (ficam salvos no repo privado).",
+    buttons:[
+      {label:"Cancelar", value:""},
+      {label:"Só sair", value:"out", kind:"primary"},
+      {label:"Sair e limpar", value:"wipe", kind:"danger"}
+    ], cancelValue:""
+  });
+  if(!choice) return;
   const tok=(DB.settings||{}).githubToken||"";
   if(/^gho_/.test(tok)){ // token do login (OAuth) → revoga no GitHub também (best-effort)
     try{ await fetch(mcpUrl()+"/panel/logout",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({access_token:tok})}); }catch(e){}
   }
-  if(wipe){
-    // apaga a cópia local inteira (dados + rastros) e reinicia zerado
+  if(choice==="wipe"){
     ["","-syncat","-patexp","-ghlogin"].forEach(s=>localStorage.removeItem(LS_KEY+s));
     try{ await idbSet("brainDir", null); }catch(e){} // solta o handle da pasta local do cérebro
     location.reload();
@@ -1311,7 +1376,8 @@ async function githubLogout(){
   const gi=document.getElementById("ghTokenInput"); if(gi) gi.value="";
   const card=document.getElementById("ghLoginCard"); if(card){ card.style.display="none"; card.innerHTML=""; }
   renderAccHeader(); renderMembers(); renderMcpConnections(); renderWatchdog();
-  stateBadge("☁ desconectado (mapa continua neste navegador — use Sair de novo pra limpar)");
+  stateBadge("☁ desconectado");
+  uiToast("Você saiu da conta GitHub.", "ok");
 }
 
 /* ===== ⚡ Entrar com GitHub — OAuth Device Flow (via worker) ===== */
@@ -1428,9 +1494,9 @@ function saveProv(){
   save(); renderProvs();
   document.getElementById("provForm").style.display="none";
 }
-function delProv(id){
+async function delProv(id){
   const p=getProv(id);
-  if(!confirm(`Remover a conta "${p.name}"? (os chats que a usam vão pedir outra conta)`)) return;
+  if(!(await uiConfirm(`Remover a conta "${p.name}"? Os chats que a usam vão pedir outra conta.`,{danger:true,okLabel:"Remover"}))) return;
   DB.settings.providers = PROVS().filter(x=>x.id!==id);
   save(); renderProvs();
 }
@@ -1453,10 +1519,10 @@ function newChat(pjId){
   f.pj.chats.push(chat); save();
   openChat(pjId, chat.id);
 }
-function delChat(pjId, chatId){
+async function delChat(pjId, chatId){
   const f=findNode(pjId);
   const ch=f.pj.chats.find(c=>c.id===chatId);
-  if(!confirm(`Apagar o chat "${ch.title||"novo chat"}"?`)) return;
+  if(!(await uiConfirm(`Apagar o chat "${ch.title||"novo chat"}"?`,{danger:true,okLabel:"Apagar"}))) return;
   f.pj.chats = f.pj.chats.filter(c=>c.id!==chatId);
   save();
   if(curChat && curChat.chatId===chatId){ curChat=null; openDrawer(f); }
@@ -2551,7 +2617,7 @@ async function copyBriefing(id){
 }
 async function deleteBrainFile(i){
   const x=filesList[i]; if(!x||!filesDir) return;
-  if(!confirm(`Excluir "${x.name}" do cérebro?`)) return;
+  if(!(await uiConfirm(`Excluir "${x.name}" do cérebro?`,{danger:true,okLabel:"Excluir"}))) return;
   try{
     const tok=(DB.settings||{}).githubToken;
     const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(filesDir+"/"+x.name)}`,{
@@ -2834,7 +2900,7 @@ async function inviteMember(){
   }catch(e){ alert("Convite: "+(e.message||e)); }
 }
 async function removeMember(login){
-  if(!confirm(`Remover @${login} da workspace? A pessoa (e as IAs dela) perde o acesso à brain.`)) return;
+  if(!(await uiConfirm(`Remover @${login} da workspace? A pessoa (e as IAs dela) perde o acesso à brain.`,{danger:true,okLabel:"Remover"}))) return;
   try{
     const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(login),{method:"DELETE", headers:ghApiHeaders()});
     if(!r.ok&&r.status!==204) throw new Error("HTTP "+r.status);
@@ -2864,7 +2930,7 @@ Pronto — mesmo mapa, mesma brain, cada um com seu acesso.`;
     setTimeout(()=>{ btn.textContent="📋 Copiar convite (passos pro novo membro)"; },3200); }
 }
 async function mcpDisconnect(clientId, name){
-  if(!confirm(`Desconectar "${name}"? Ele perde o acesso à brain na hora (precisaria autorizar de novo).`)) return;
+  if(!(await uiConfirm(`Desconectar "${name}"? Ele perde o acesso à brain na hora (precisaria autorizar de novo).`,{danger:true,okLabel:"Desconectar"}))) return;
   try{
     const r=await fetch(mcpUrl()+"/admin/connections/"+encodeURIComponent(clientId),{
       method:"DELETE", headers:{Authorization:"Bearer "+((DB.settings||{}).githubToken||"")}});
