@@ -447,7 +447,12 @@
   <div class="f"><label>Status</label>
     <select id="pjStatus"><option value="ativo">🟢 Ativo</option><option value="pausado">🟡 Pausado</option><option value="concluido">⚪ Concluído</option></select>
   </div>
-  <div class="f"><label>Repositório GitHub (owner/repo, auto-sugerido; usado no modo remoto)</label><input id="pjGithub" list="ghRepoList" placeholder="ex.: antonioz2022/DragonblockGP"><datalist id="ghRepoList"></datalist></div>
+  <div class="f"><label>🔗 Repositório GitHub</label>
+    <input id="pjGithub" list="ghRepoList" placeholder="owner/repo — ex.: antonioz2022/DragonblockGP" oninput="pjRepoValidate()" onchange="pjRepoValidate()"><datalist id="ghRepoList"></datalist>
+    <div id="pjRepoStatus" style="font-size:11.5px;color:var(--tx3);margin-top:5px;min-height:15px"></div>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:6px;font-size:12.5px;color:var(--tx2);cursor:pointer">
+      <input type="checkbox" id="pjNoRepo" onchange="pjNoRepoToggle(true)" style="width:auto;margin:0"> Este projeto não tem repositório
+    </label></div>
   <div class="f"><label>Pasta local no PC (opcional, entra no INDEX da brain p/ IAs)</label><input id="pjLocal" placeholder="ex.: C:\Users\anton\Desktop\Mine M\DBGP\DragonblockGP"></div>
   <div class="f"><label>Logo (imagem opcional, substitui o emoji no mapa)</label>
     <input type="file" id="pjImgFile" accept="image/*" onchange="pickLogo(event,'pj')">
@@ -790,7 +795,7 @@ function nodeHtml(type, item, c, p, ap){
   }else if(type==="pj"){
     inner = orbInner(p, "🚀");
     tag = esc(p.name);
-    sub = p.apps.length+" serviço"+(p.apps.length===1?"":"s");
+    sub = p.apps.length+" serviço"+(p.apps.length===1?"":"s")+((p.github&&!p.noRepo)?" · ⎇ repo":(p.noRepo?"":""));
     const stc = p.status==="ativo"?"ok":(p.status==="pausado"?"alert":"na");
     extra = `<div class="halo" style="background:${esc(c.color)}; opacity:.25"></div>
              <span class="sdot ${stc}"></span>
@@ -1215,6 +1220,8 @@ function openPjModal(id){
   document.getElementById("pjDesc").value=p?(p.desc||""):"";
   document.getElementById("pjStatus").value=p?(p.status||"ativo"):"ativo";
   document.getElementById("pjGithub").value=p?(p.github||""):"";
+  document.getElementById("pjNoRepo").checked=!!(p&&p.noRepo);
+  pjNoRepoToggle(false);   // aplica o estado (habilita/desabilita) sem apagar o valor; valida se houver repo
   document.getElementById("pjLocal").value=p?(p.local||""):"";
   {const pr=(p&&p.profile)||{}; document.getElementById("pjTone").value=pr.tone||""; document.getElementById("pjAudience").value=pr.audience||""; document.getElementById("pjValue").value=pr.value||""; document.getElementById("pjRules").value=pr.rules||"";}
   (async()=>{ const rs=await ghMyRepos(); const dl=document.getElementById("ghRepoList");
@@ -1227,13 +1234,16 @@ function openPjModal(id){
 function savePj(){
   const name=document.getElementById("pjName").value.trim();
   if(!name) return alert("Dá um nome pro projeto.");
+  const noRepo=document.getElementById("pjNoRepo").checked;
   const data={emoji:document.getElementById("pjEmoji").value.trim()||"🚀", name,
     desc:document.getElementById("pjDesc").value.trim(), status:document.getElementById("pjStatus").value,
-    github:document.getElementById("pjGithub").value.trim(),
+    github:noRepo?"":document.getElementById("pjGithub").value.trim(),
+    noRepo,
     local:document.getElementById("pjLocal").value.trim(),
     profile:{tone:document.getElementById("pjTone").value.trim(), audience:document.getElementById("pjAudience").value.trim(), value:document.getElementById("pjValue").value.trim(), rules:document.getElementById("pjRules").value.trim()}};
   if(pendingLogo.pj!==undefined){ data.img = pendingLogo.pj || ""; if(pendingLogo.pj) data.imgFit="contain"; }
-  if(!data.github) data.github=ghAutoMatchRepo(name);   // conecta sozinho ao repo com nome parecido
+  if(!noRepo && !data.github) data.github=ghAutoMatchRepo(name);   // conecta sozinho ao repo com nome parecido (só se não for "sem repo")
+  if(editingPj && teleCache[editingPj] && findNode(editingPj).pj.github!==data.github) delete teleCache[editingPj]; // trocou de repo → invalida cache
   if(editingPj){ const pj=findNode(editingPj).pj; Object.assign(pj, data); pj._memDirty=true; }
   else{
     const co=findNode(pjTargetCo).co;
@@ -1243,6 +1253,34 @@ function savePj(){
     expanded.add(co.id); newborn.add(id);
   }
   save(); scheduleSync(); closeModals(); render();
+}
+/* ===== repo do projeto: marcar "sem repo" + validar o owner/repo ao vivo ===== */
+function pjNoRepoToggle(fromUser){
+  const no=document.getElementById("pjNoRepo").checked;
+  const inp=document.getElementById("pjGithub");
+  inp.disabled=no; inp.style.opacity=no?".45":"1";
+  if(no){ if(fromUser) inp.value=""; const el=document.getElementById("pjRepoStatus"); if(el){ el.textContent="sem repositório neste projeto"; el.style.color="var(--tx3)"; } }
+  else pjRepoValidate();
+}
+let pjRepoValTimer=null;
+function pjRepoValidate(){ clearTimeout(pjRepoValTimer); pjRepoValTimer=setTimeout(_pjRepoValidate, 450); }
+async function _pjRepoValidate(){
+  const el=document.getElementById("pjRepoStatus"); if(!el) return;
+  if(document.getElementById("pjNoRepo").checked){ el.textContent="sem repositório neste projeto"; el.style.color="var(--tx3)"; return; }
+  const v=(document.getElementById("pjGithub").value||"").trim();
+  if(!v){ el.textContent='opcional — deixe em branco ou marque "sem repositório"'; el.style.color="var(--tx3)"; return; }
+  if(!/^[^/\s]+\/[^/\s]+$/.test(v)){ el.textContent="use o formato owner/repo"; el.style.color="var(--warn)"; return; }
+  if(!(DB.settings||{}).githubToken){ el.textContent="entre com o GitHub (⚙ Contas) pra validar o repositório"; el.style.color="var(--tx3)"; return; }
+  el.textContent="verificando…"; el.style.color="var(--tx3)";
+  const asked=v;
+  try{
+    const j=await ghGet("/repos/"+v);
+    if((document.getElementById("pjGithub").value||"").trim()!==asked) return; // mudou enquanto buscava
+    if(j&&j.full_name){
+      const bits=[j.private?"🔒 privado":"🌐 público"]; if(j.language) bits.push(esc(j.language)); if(j.stargazers_count) bits.push("⭐ "+j.stargazers_count);
+      el.innerHTML="✓ conectado: <b>"+esc(j.full_name)+"</b> · "+bits.join(" · "); el.style.color="var(--ok)";
+    } else { el.textContent="repositório não encontrado (confira owner/repo)"; el.style.color="var(--warn)"; }
+  }catch(e){ el.textContent="não achei esse repo (o token não tem acesso, ou owner/repo errado)"; el.style.color="var(--warn)"; }
 }
 async function delPj(id){
   const f=findNode(id);
@@ -2212,17 +2250,30 @@ async function ghGet(path){
   return r.json();
 }
 async function ghRepoTelemetry(owner,repo){
-  const out={git:null, specs:null, source:"github"};
+  const out={git:null, specs:null, source:"github", repo:null, commits:[], issues:[], prs:[], repoError:false};
   const info=await ghGet(`/repos/${owner}/${repo}`);
-  const branch=info?info.default_branch:null;
-  const commits=await ghGet(`/repos/${owner}/${repo}/commits?per_page=1`);
-  if(commits && commits[0]){
-    const c=commits[0];
-    out.git={ branch, commits:null, hash:(c.sha||"").slice(0,7),
+  if(!info){ out.repoError=true; return out; }   // 404: repo não existe ou o token não o inclui
+  const branch=info.default_branch||null;
+  out.repo={ private:!!info.private, desc:info.description||"", lang:info.language||"",
+    stars:info.stargazers_count||0, forks:info.forks_count||0, openIssues:info.open_issues_count||0,
+    pushedAt:info.pushed_at?Date.parse(info.pushed_at):null,
+    url:info.html_url||`https://github.com/${owner}/${repo}`, defBranch:branch,
+    license:(info.license&&info.license.spdx_id&&info.license.spdx_id!=="NOASSERTION")?info.license.spdx_id:"" };
+  const commits=await ghGet(`/repos/${owner}/${repo}/commits?per_page=5`).catch(()=>null);
+  if(Array.isArray(commits)){
+    out.commits=commits.map(c=>({ hash:(c.sha||"").slice(0,7),
+      msg:((c.commit&&c.commit.message)||"").split("\n")[0]||"(sem mensagem)",
       ts:(c.commit&&c.commit.author&&c.commit.author.date)?Date.parse(c.commit.author.date):null,
-      msg:((c.commit&&c.commit.message)||"").split("\n")[0]||"(sem mensagem)" };
-  }else if(branch){ out.git={branch, commits:null, hash:"", ts:null, msg:"(sem commits)"}; }
-  const specs=await ghGet(`/repos/${owner}/${repo}/contents/specs`);
+      author:(c.author&&c.author.login)||(c.commit&&c.commit.author&&c.commit.author.name)||"", url:c.html_url }));
+    if(out.commits[0]){ const f=out.commits[0]; out.git={branch, commits:null, hash:f.hash, ts:f.ts, msg:f.msg}; }
+  }
+  if(!out.git && branch) out.git={branch, commits:null, hash:"", ts:null, msg:"(sem commits)"};
+  const issues=await ghGet(`/repos/${owner}/${repo}/issues?state=open&per_page=8&sort=updated`).catch(()=>null);
+  if(Array.isArray(issues)) for(const it of issues){
+    const o={num:it.number, title:it.title||"", url:it.html_url, ts:it.updated_at?Date.parse(it.updated_at):null};
+    if(it.pull_request) out.prs.push(o); else out.issues.push(o);
+  }
+  const specs=await ghGet(`/repos/${owner}/${repo}/contents/specs`).catch(()=>null);
   if(Array.isArray(specs)){
     const dirs=specs.filter(e=>e.type==="dir" && /^\d{3}-/.test(e.name)).map(e=>e.name).sort();
     if(dirs.length) out.specs={count:dirs.length, last:dirs[dirs.length-1]};
@@ -2262,7 +2313,7 @@ async function getTelemetry(p, {promptLocal=false}={}){
     if(!p.github){ const gh=await detectRepoFromGit(dir); if(gh){ p.github=gh; save(); } }
     const t=await readProjectTelemetry(dir); t.at=Date.now(); teleCache[p.id]=t; return t;
   }
-  if(p.github && (DB.settings||{}).githubToken){
+  if(p.github && !p.noRepo && (DB.settings||{}).githubToken){
     const [o,r]=p.github.split("/");
     const t=await ghRepoTelemetry(o,r); t.at=Date.now(); teleCache[p.id]=t; return t;
   }
@@ -2284,26 +2335,60 @@ function hasAIProvider(){ return ((DB.settings||{}).providers||[]).some(pr=>pr.a
 function teleInner(c,p,state){
   const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
   if(state==="loading") return `<div class="dr-desc" style="color:var(--tx3)">lendo o projeto…</div>`;
-  if(state==="none" || !t) return `<div style="font-size:12px;color:var(--tx3);margin:-2px 0 8px">
-      Aponte pra pasta do projeto (o repositório) pra ver commit, branch, features e pendências reais, sem pedir pra ninguém.
-    </div><button class="btn sm primary" onclick="connectProjDir('${p.id}')">🔗 Conectar pasta do projeto</button>`;
-  const g=t.git, s=t.specs, chips=[];
-  chips.push(t.source==="github"
+  // repo linkado mas ilegível (404/sem acesso)
+  if(t && t.repoError){
+    return `<div style="font-size:12px;color:var(--warn);margin:-2px 0 8px">Não consegui ler <b>${esc(p.github)}</b> (owner/repo errado, repo privado sem acesso, ou rate limit).</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn sm" onclick="refreshProjClick('${p.id}')">🔄 Tentar de novo</button>
+        <button class="btn sm ghost" onclick="openPjModalFor('${c.id}','${p.id}')">✎ Corrigir repositório</button></div>`;
+  }
+  if(state==="none" || !t){
+    if(p.noRepo) return `<div style="font-size:12px;color:var(--tx3);margin:-2px 0 8px">Sem repositório (por escolha). Dá pra conectar a pasta local ou linkar um repo no ✎ Editar.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" onclick="connectProjDir('${p.id}')">🔗 Conectar pasta local</button><button class="btn sm ghost" onclick="openPjModalFor('${c.id}','${p.id}')">✎ Editar</button></div>`;
+    if(p.github) return `<div style="font-size:12px;color:var(--tx3);margin:-2px 0 8px">Repo linkado (<b>${esc(p.github)}</b>), mas sem leitura ainda. Entre com o GitHub em ⚙ Contas, ou conecte a pasta local.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" onclick="refreshProjClick('${p.id}')">🔄 Ler do GitHub</button><button class="btn sm" onclick="connectProjDir('${p.id}')">🔗 Conectar pasta</button></div>`;
+    return `<div style="font-size:12px;color:var(--tx3);margin:-2px 0 8px">
+        Conecte a pasta do projeto (working tree ao vivo) ou linke um repositório GitHub no ✎ Editar, pra ver commit, branch, issues e features reais.
+      </div><div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn sm primary" onclick="connectProjDir('${p.id}')">🔗 Conectar pasta do projeto</button>
+        <button class="btn sm" onclick="openPjModalFor('${c.id}','${p.id}')">🐙 Linkar repositório</button></div>`;
+  }
+  const g=t.git, s=t.specs, R=t.repo, isGh=t.source==="github", chips=[];
+  chips.push(isGh
     ? `<span class="chip" title="lido da API do GitHub: estado remoto (pushed)">☁ GitHub</span>`
     : `<span class="chip" title="lido da pasta local: working tree ao vivo">📁 local</span>`);
   if(g){ chips.push(`<span class="chip" title="branch">⎇ ${esc(g.branch||"—")}</span>`); if(g.commits!=null) chips.push(`<span class="chip">${g.commits} commit(s)</span>`); }
+  if(R){ if(R.lang) chips.push(`<span class="chip">${esc(R.lang)}</span>`);
+         if(R.stars) chips.push(`<span class="chip">⭐ ${R.stars}</span>`);
+         if(R.forks) chips.push(`<span class="chip">🍴 ${R.forks}</span>`);
+         chips.push(`<span class="chip" title="issues + PRs abertos (contagem do GitHub)">🐛 ${R.openIssues} abertas</span>`);
+         if(R.license) chips.push(`<span class="chip">${esc(R.license)}</span>`); }
   if(s) chips.push(`<span class="chip" title="pasta specs/">${s.count} features · atual ${esc(s.last||"—")}</span>`);
-  chips.push(`<span class="chip">${openN}/${totN} pendências abertas</span>`);
+  chips.push(`<span class="chip">${openN}/${totN} pendências</span>`);
+  const header = R ? `<div style="display:flex;align-items:center;gap:8px;margin:-2px 0 6px;flex-wrap:wrap">
+      <a href="${esc(R.url)}" target="_blank" rel="noopener" style="color:var(--ac2);font-weight:650;font-size:13px;text-decoration:none">🐙 ${esc(p.github)}</a>
+      <span class="chip">${R.private?"🔒 privado":"🌐 público"}</span>
+      ${R.pushedAt?`<span style="font-size:11px;color:var(--tx3)">push ${esc(agoStr(R.pushedAt))}</span>`:""}
+    </div>${R.desc?`<div class="dr-desc" style="color:var(--tx2);margin:0 0 6px">${esc(R.desc)}</div>`:""}` : "";
   const commitLine = g
     ? `<div style="font-size:12.5px;color:var(--tx2);margin:2px 0 8px"><b>último commit</b> ${agoStr(g.ts)}${g.hash?` · <code style="color:var(--tx3)">${esc(g.hash)}</code>`:""}<br><span style="color:var(--tx)">${esc(g.msg)}</span></div>`
     : `<div class="dr-desc" style="color:var(--tx3)">pasta sem <code>.git</code>, sem histórico de commits</div>`;
-  return `${commitLine}<div class="chips" style="margin-bottom:8px">${chips.join("")}</div>
+  const links = R ? `<a class="btn sm ghost" style="text-decoration:none" href="${esc(R.url)}" target="_blank" rel="noopener">↗ Repo</a>
+      <a class="btn sm ghost" style="text-decoration:none" href="${esc(R.url)}/issues" target="_blank" rel="noopener">🐛 Issues</a>
+      <a class="btn sm ghost" style="text-decoration:none" href="${esc(R.url)}/pulls" target="_blank" rel="noopener">🔀 PRs</a>
+      <a class="btn sm ghost" style="text-decoration:none" href="${esc(R.url)}/commits" target="_blank" rel="noopener">⎇ Commits</a>` : "";
+  const miniLink=(icon,txt,url)=>`<a class="mini-item" href="${esc(url)}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--tx)"><span class="mi-emoji">${icon}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${txt}</span><span class="arrow">↗</span></a>`;
+  const commitsList = (isGh && t.commits && t.commits.length>1) ? `<details style="margin-top:8px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Commits recentes (${t.commits.length})</summary><div class="mini-list" style="margin-top:6px">${t.commits.map(cm=>miniLink("⎇",esc(cm.msg),cm.url)).join("")}</div></details>` : "";
+  const issuesList = (isGh && t.issues && t.issues.length) ? `<details style="margin-top:6px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Issues abertas (${t.issues.length}${R&&R.openIssues>t.issues.length?"+":""})</summary><div class="mini-list" style="margin-top:6px">${t.issues.map(it=>miniLink("🐛","#"+it.num+" "+esc(it.title),it.url)).join("")}</div></details>` : "";
+  const prsList = (isGh && t.prs && t.prs.length) ? `<details style="margin-top:6px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Pull requests abertos (${t.prs.length})</summary><div class="mini-list" style="margin-top:6px">${t.prs.map(it=>miniLink("🔀","#"+it.num+" "+esc(it.title),it.url)).join("")}</div></details>` : "";
+  return `${header}${commitLine}<div class="chips" style="margin-bottom:8px">${chips.join("")}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <button class="btn sm" onclick="refreshProjClick('${p.id}')">🔄 Atualizar do projeto</button>
-      <button class="btn sm primary" id="copyCtxBtn" onclick="copyProjectContext('${p.id}')" title="Copia commits + pendências + memória atual pra colar no Claude Code / Codex">📋 Copiar contexto p/ IA</button>
-      <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório, versionado no git e alimentado por qualquer IA">🧩 Brain no repo</button>
-      <button class="btn sm ghost" onclick="disconnectProjDir('${p.id}')" title="esquecer a pasta">⊘</button>
-    </div>${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
+      ${links}
+      <button class="btn sm" onclick="refreshProjClick('${p.id}')">🔄 Atualizar</button>
+      <button class="btn sm primary" id="copyCtxBtn" onclick="copyProjectContext('${p.id}')" title="Copia commits + pendências + memória atual pra colar no Claude Code / Codex">📋 Contexto p/ IA</button>
+      <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório, versionado no git">🧩 Brain no repo</button>
+      ${isGh?"":`<button class="btn sm ghost" onclick="disconnectProjDir('${p.id}')" title="esquecer a pasta">⊘</button>`}
+    </div>${commitsList}${issuesList}${prsList}${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
 }
 function teleSectionHtml(c,p,state){ return `<div class="dr-sec">📡 Estado do projeto</div><div id="teleWrap">${teleInner(c,p,state)}</div>`; }
 function paintTele(pid,state){ const el=document.getElementById("teleWrap"); if(!el) return; const f=findNode(pid); if(f&&f.type==="pj") el.innerHTML=teleInner(f.co,f.pj,state); }
