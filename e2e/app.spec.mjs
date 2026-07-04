@@ -356,6 +356,25 @@ test("mobile 360px: nada estoura a tela (página, drawer e modais)", async ({ pa
   }
 });
 
+test("polish: skeleton na telemetria + estados vazios (cockpit/busca)", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  // telemetria em 'loading' rende skeleton, não texto cru (determinístico)
+  const hasSkel = await page.evaluate(() => { const c = DB.companies[0], p = c.projects[0]; return teleInner(c, p, "loading").includes("skel-wrap"); });
+  expect(hasSkel).toBe(true);
+
+  // cockpit vazio (sem projetos): mensagem amigável
+  await page.evaluate(() => { window.__bkp = DB.companies; DB.companies = []; openCockpit(); });
+  await expect(page.locator("#cockpitBody .empty-mini")).toContainText("Sem projetos ainda");
+  await page.evaluate(() => { DB.companies = window.__bkp; closeModals(); });
+
+  // busca: vazia + sem resultado
+  await page.keyboard.press("Control+k");
+  await expect(page.locator("#searchResults .empty-mini")).toContainText("Digite ao menos 2 letras");
+  await page.fill("#searchInput", "zzxqwops");
+  await expect(page.locator("#searchResults .empty-mini")).toContainText("Nada encontrado");
+});
+
 test("tema claro/escuro: alterna, muda o fundo e persiste no reload", async ({ page }) => {
   const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await bg()).toBe("rgb(11, 10, 18)");                 // escuro (#0B0A12) por padrão

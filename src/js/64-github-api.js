@@ -104,7 +104,14 @@ function hasAIProvider(){ return ((DB.settings||{}).providers||[]).some(pr=>pr.a
 
 function teleInner(c,p,state){
   const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
-  if(state==="loading") return `<div class="dr-desc" style="color:var(--tx3)">lendo o projeto…</div>`;
+  if(state==="loading") return `<div class="skel-wrap" aria-label="carregando…">
+      <div class="skel" style="height:15px;width:58%"></div>
+      <div class="skel" style="height:12px;width:82%"></div>
+      <div class="chips" style="margin-top:2px">
+        <span class="skel" style="height:22px;width:74px;border-radius:99px"></span>
+        <span class="skel" style="height:22px;width:92px;border-radius:99px"></span>
+        <span class="skel" style="height:22px;width:60px;border-radius:99px"></span>
+      </div></div>`;
   // repo linkado mas ilegível (404/sem acesso)
   if(t && t.repoError){
     return `<div style="font-size:12px;color:var(--warn);margin:-2px 0 8px">Não consegui ler <b>${esc(p.github)}</b> (owner/repo errado, repo privado sem acesso, ou rate limit).</div>

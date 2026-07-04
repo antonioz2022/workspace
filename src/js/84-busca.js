@@ -2,13 +2,13 @@
 function snippet(text,q){ const i=(text||"").toLowerCase().indexOf(q); if(i<0) return ""; return "…"+(text.slice(Math.max(0,i-24), i+46)).replace(/\s+/g," ").trim()+"…"; }
 function openSearch(){
   document.getElementById("searchModal").classList.add("open");
-  const inp=document.getElementById("searchInput"); inp.value=""; document.getElementById("searchResults").innerHTML="";
+  const inp=document.getElementById("searchInput"); inp.value=""; runSearch(); // já mostra a dica de busca
   setTimeout(()=>inp.focus(), 30);
 }
 function runSearch(){
   const q=(document.getElementById("searchInput").value||"").trim().toLowerCase();
   const box=document.getElementById("searchResults"); if(!box) return;
-  if(q.length<2){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">digite ao menos 2 letras…</div>`; return; }
+  if(q.length<2){ box.innerHTML=`<div class="empty-mini"><span class="ico">🔎</span>Busque em empresas, projetos, pendências, serviços e memória. Digite ao menos 2 letras.</div>`; return; }
   const hit=s=>(s||"").toLowerCase().includes(q), res=[];
   for(const c of DB.companies){
     if(hit(c.name)||hit(c.desc)) res.push({id:c.id, icon:c.emoji||"🏢", title:c.name, sub:"empresa"+(c.desc?" · "+c.desc:"")});
@@ -19,7 +19,7 @@ function runSearch(){
       if(hit(p.context)) res.push({id:p.id, icon:"🧠", title:"memória de "+p.name, sub:snippet(p.context,q)});
     }
   }
-  if(!res.length){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">nada pra "<b>${esc(q)}</b>"</div>`; return; }
+  if(!res.length){ box.innerHTML=`<div class="empty-mini"><span class="ico">🫥</span>Nada encontrado pra "<b>${esc(q)}</b>".</div>`; return; }
   box.innerHTML = res.slice(0,50).map(r=>`<div class="mini-item" onclick="searchGo('${r.id}')">
       <span class="mi-emoji">${esc(r.icon)}</span>
       <span style="flex:1;min-width:0"><b>${esc(r.title)}</b><br><span style="font-size:11px;color:var(--tx3)">${esc(r.sub)}</span></span>

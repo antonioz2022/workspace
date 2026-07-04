@@ -118,7 +118,7 @@ function b64bytes(buf){
 const IMG_RE=/\.(png|jpe?g|gif|webp|svg|ico|bmp)$/i;
 function fmtSize(n){ return n>=1048576 ? (n/1048576).toFixed(1)+" MB" : n>=1024 ? Math.round(n/1024)+" KB" : n+" B"; }
 function filesSectionHtml(){
-  return `<div class="dr-sec">🎨 Arquivos & Brand kit</div><div id="filesWrap"><div class="dr-desc" style="color:var(--tx3)">carregando…</div></div>`;
+  return `<div class="dr-sec">🎨 Arquivos & Brand kit</div><div id="filesWrap"><div class="skel-wrap" aria-label="carregando…"><div class="skel" style="height:44px"></div><div class="skel" style="height:44px"></div></div></div>`;
 }
 function filesDirFor(f){
   if(f.type==="co") return `brain/${slug(f.co.name)}/brand`;

@@ -55,6 +55,16 @@
   [data-theme="light"] #pjMemory,[data-theme="light"] .ui-dlg input,[data-theme="light"] #ghTokenInput{
     background:rgba(30,20,70,.05) !important}
   [data-theme="light"] .bub code,[data-theme="light"] .bub pre{background:rgba(30,20,70,.07)}
+  [data-theme="light"] .skel::after{background:linear-gradient(90deg,transparent,rgba(0,0,0,.05),transparent)}
+
+  /* ===== skeleton (loading) & vazios em painel ===== */
+  .skel{position:relative; overflow:hidden; background:var(--glass2); border-radius:8px}
+  .skel::after{content:""; position:absolute; inset:0; transform:translateX(-100%);
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent); animation:skelShine 1.3s infinite}
+  @keyframes skelShine{100%{transform:translateX(100%)}}
+  .skel-wrap{display:flex; flex-direction:column; gap:9px}
+  .empty-mini{text-align:center; color:var(--tx3); padding:28px 16px; font-size:13px; line-height:1.5}
+  .empty-mini .ico{font-size:28px; opacity:.5; display:block; margin-bottom:9px}
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
   html,body{height:100%; overflow:hidden}
   body{background:var(--bg); color:var(--tx); font:15px/1.6 'Inter',system-ui,sans-serif}
@@ -427,6 +437,7 @@
   @media (prefers-reduced-motion: reduce){
     .blob, .es-logo, .es-signal, .empty-state.show, .node.enter, .sdot.load{animation:none !important}
     .node:hover .orb, .btn:hover, .btn:active, .btn.primary:hover, .mini-item:hover{transform:none !important}
+    .skel::after{animation:none !important}
   }
 </style>
 <script>try{if(localStorage.getItem("workspace-map-v3-theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}</script>

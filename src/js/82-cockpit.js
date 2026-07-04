@@ -26,7 +26,7 @@ function renderCockpit(){
       <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
       <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
     </div>
-    ${rows.map(r=>{
+    ${rows.length ? rows.map(r=>{
       const dot=r.alerts>0?"🔴":(r.open>0?"🟡":"🟢");
       const commit=r.commitTs?`último commit ${agoStr(r.commitTs)}`:(r.t?"sem git":"telemetria não lida");
       const src=r.t?(r.t.source==="github"?"☁":"📁"):"";
@@ -40,7 +40,7 @@ function renderCockpit(){
         </span>
         <span class="arrow">→</span>
       </div>`;
-    }).join("")}
+    }).join("") : `<div class="empty-mini"><span class="ico">🗺️</span>Sem projetos ainda. Crie uma empresa e um projeto no mapa pra ver tudo agregado aqui: pendências, alertas, commits e custo.</div>`}
     <div id="ckFeed"></div>`;
 }
 

@@ -12,7 +12,7 @@ async function renderMembers(){
     list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">liga a sync (token + repo, acima). A workspace É o repo de estado</div>`;
     if(self) self.textContent=""; return;
   }
-  list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">carregando membros…</div>`;
+  list.innerHTML=`<div class="skel-wrap" aria-label="carregando membros…"><div class="skel" style="height:40px"></div><div class="skel" style="height:40px"></div></div>`;
   try{
     const me=await ghGet("/user").catch(()=>null);
     if(me&&me.login) localStorage.setItem(LS_KEY+"-ghlogin", me.login);

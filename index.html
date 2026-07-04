@@ -55,6 +55,16 @@
   [data-theme="light"] #pjMemory,[data-theme="light"] .ui-dlg input,[data-theme="light"] #ghTokenInput{
     background:rgba(30,20,70,.05) !important}
   [data-theme="light"] .bub code,[data-theme="light"] .bub pre{background:rgba(30,20,70,.07)}
+  [data-theme="light"] .skel::after{background:linear-gradient(90deg,transparent,rgba(0,0,0,.05),transparent)}
+
+  /* ===== skeleton (loading) & vazios em painel ===== */
+  .skel{position:relative; overflow:hidden; background:var(--glass2); border-radius:8px}
+  .skel::after{content:""; position:absolute; inset:0; transform:translateX(-100%);
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.10),transparent); animation:skelShine 1.3s infinite}
+  @keyframes skelShine{100%{transform:translateX(100%)}}
+  .skel-wrap{display:flex; flex-direction:column; gap:9px}
+  .empty-mini{text-align:center; color:var(--tx3); padding:28px 16px; font-size:13px; line-height:1.5}
+  .empty-mini .ico{font-size:28px; opacity:.5; display:block; margin-bottom:9px}
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
   html,body{height:100%; overflow:hidden}
   body{background:var(--bg); color:var(--tx); font:15px/1.6 'Inter',system-ui,sans-serif}
@@ -427,6 +437,7 @@
   @media (prefers-reduced-motion: reduce){
     .blob, .es-logo, .es-signal, .empty-state.show, .node.enter, .sdot.load{animation:none !important}
     .node:hover .orb, .btn:hover, .btn:active, .btn.primary:hover, .mini-item:hover{transform:none !important}
+    .skel::after{animation:none !important}
   }
 </style>
 <script>try{if(localStorage.getItem("workspace-map-v3-theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}</script>
@@ -2628,7 +2639,14 @@ function hasAIProvider(){ return ((DB.settings||{}).providers||[]).some(pr=>pr.a
 
 function teleInner(c,p,state){
   const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
-  if(state==="loading") return `<div class="dr-desc" style="color:var(--tx3)">lendo o projeto…</div>`;
+  if(state==="loading") return `<div class="skel-wrap" aria-label="carregando…">
+      <div class="skel" style="height:15px;width:58%"></div>
+      <div class="skel" style="height:12px;width:82%"></div>
+      <div class="chips" style="margin-top:2px">
+        <span class="skel" style="height:22px;width:74px;border-radius:99px"></span>
+        <span class="skel" style="height:22px;width:92px;border-radius:99px"></span>
+        <span class="skel" style="height:22px;width:60px;border-radius:99px"></span>
+      </div></div>`;
   // repo linkado mas ilegível (404/sem acesso)
   if(t && t.repoError){
     return `<div style="font-size:12px;color:var(--warn);margin:-2px 0 8px">Não consegui ler <b>${esc(p.github)}</b> (owner/repo errado, repo privado sem acesso, ou rate limit).</div>
@@ -3397,7 +3415,7 @@ function b64bytes(buf){
 const IMG_RE=/\.(png|jpe?g|gif|webp|svg|ico|bmp)$/i;
 function fmtSize(n){ return n>=1048576 ? (n/1048576).toFixed(1)+" MB" : n>=1024 ? Math.round(n/1024)+" KB" : n+" B"; }
 function filesSectionHtml(){
-  return `<div class="dr-sec">🎨 Arquivos & Brand kit</div><div id="filesWrap"><div class="dr-desc" style="color:var(--tx3)">carregando…</div></div>`;
+  return `<div class="dr-sec">🎨 Arquivos & Brand kit</div><div id="filesWrap"><div class="skel-wrap" aria-label="carregando…"><div class="skel" style="height:44px"></div><div class="skel" style="height:44px"></div></div></div>`;
 }
 function filesDirFor(f){
   if(f.type==="co") return `brain/${slug(f.co.name)}/brand`;
@@ -3618,7 +3636,7 @@ function renderCockpit(){
       <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
       <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
     </div>
-    ${rows.map(r=>{
+    ${rows.length ? rows.map(r=>{
       const dot=r.alerts>0?"🔴":(r.open>0?"🟡":"🟢");
       const commit=r.commitTs?`último commit ${agoStr(r.commitTs)}`:(r.t?"sem git":"telemetria não lida");
       const src=r.t?(r.t.source==="github"?"☁":"📁"):"";
@@ -3632,7 +3650,7 @@ function renderCockpit(){
         </span>
         <span class="arrow">→</span>
       </div>`;
-    }).join("")}
+    }).join("") : `<div class="empty-mini"><span class="ico">🗺️</span>Sem projetos ainda. Crie uma empresa e um projeto no mapa pra ver tudo agregado aqui: pendências, alertas, commits e custo.</div>`}
     <div id="ckFeed"></div>`;
 }
 
@@ -3674,13 +3692,13 @@ async function renderActivityFeed(){
 function snippet(text,q){ const i=(text||"").toLowerCase().indexOf(q); if(i<0) return ""; return "…"+(text.slice(Math.max(0,i-24), i+46)).replace(/\s+/g," ").trim()+"…"; }
 function openSearch(){
   document.getElementById("searchModal").classList.add("open");
-  const inp=document.getElementById("searchInput"); inp.value=""; document.getElementById("searchResults").innerHTML="";
+  const inp=document.getElementById("searchInput"); inp.value=""; runSearch(); // já mostra a dica de busca
   setTimeout(()=>inp.focus(), 30);
 }
 function runSearch(){
   const q=(document.getElementById("searchInput").value||"").trim().toLowerCase();
   const box=document.getElementById("searchResults"); if(!box) return;
-  if(q.length<2){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">digite ao menos 2 letras…</div>`; return; }
+  if(q.length<2){ box.innerHTML=`<div class="empty-mini"><span class="ico">🔎</span>Busque em empresas, projetos, pendências, serviços e memória. Digite ao menos 2 letras.</div>`; return; }
   const hit=s=>(s||"").toLowerCase().includes(q), res=[];
   for(const c of DB.companies){
     if(hit(c.name)||hit(c.desc)) res.push({id:c.id, icon:c.emoji||"🏢", title:c.name, sub:"empresa"+(c.desc?" · "+c.desc:"")});
@@ -3691,7 +3709,7 @@ function runSearch(){
       if(hit(p.context)) res.push({id:p.id, icon:"🧠", title:"memória de "+p.name, sub:snippet(p.context,q)});
     }
   }
-  if(!res.length){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">nada pra "<b>${esc(q)}</b>"</div>`; return; }
+  if(!res.length){ box.innerHTML=`<div class="empty-mini"><span class="ico">🫥</span>Nada encontrado pra "<b>${esc(q)}</b>".</div>`; return; }
   box.innerHTML = res.slice(0,50).map(r=>`<div class="mini-item" onclick="searchGo('${r.id}')">
       <span class="mi-emoji">${esc(r.icon)}</span>
       <span style="flex:1;min-width:0"><b>${esc(r.title)}</b><br><span style="font-size:11px;color:var(--tx3)">${esc(r.sub)}</span></span>
@@ -3944,7 +3962,7 @@ async function renderMembers(){
     list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">liga a sync (token + repo, acima). A workspace É o repo de estado</div>`;
     if(self) self.textContent=""; return;
   }
-  list.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">carregando membros…</div>`;
+  list.innerHTML=`<div class="skel-wrap" aria-label="carregando membros…"><div class="skel" style="height:40px"></div><div class="skel" style="height:40px"></div></div>`;
   try{
     const me=await ghGet("/user").catch(()=>null);
     if(me&&me.login) localStorage.setItem(LS_KEY+"-ghlogin", me.login);
