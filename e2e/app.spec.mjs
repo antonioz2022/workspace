@@ -356,6 +356,25 @@ test("mobile 360px: nada estoura a tela (página, drawer e modais)", async ({ pa
   }
 });
 
+test("tema claro/escuro: alterna, muda o fundo e persiste no reload", async ({ page }) => {
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  expect(await bg()).toBe("rgb(11, 10, 18)");                 // escuro (#0B0A12) por padrão
+  await page.locator("#moreBtn").click();
+  await page.locator("#themeToggle").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await bg()).toBe("rgb(244, 243, 251)");              // claro (#F4F3FB)
+  // o texto dos botões da barra termina ESCURO no claro (toHaveCSS espera a transição de cor)
+  await expect(page.locator(".topright .btn").first()).toHaveCSS("color", "rgb(27, 24, 48)");
+  await expect(page.locator("#themeToggle")).toHaveText(/Tema escuro/);
+  await page.reload();                                        // persiste
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await bg()).toBe("rgb(244, 243, 251)");
+  await page.locator("#moreBtn").click();
+  await page.locator("#themeToggle").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  expect(await bg()).toBe("rgb(11, 10, 18)");
+});
+
 test("barra: menu ⋯ Mais abre e leva às ações secundárias", async ({ page }) => {
   await page.locator("#moreBtn").click();
   await expect(page.locator("#moreMenu")).toHaveClass(/show/);

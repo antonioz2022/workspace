@@ -19,6 +19,7 @@ document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState=
 setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true); }, 5*60*1000);
 
 /* ================= go ================= */
+applyTheme(localStorage.getItem(LS_KEY+"-theme")==="light"?"light":"dark"); // sincroniza rótulo do menu + meta theme-color
 render();
 initDock();
 wsBoot();

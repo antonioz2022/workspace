@@ -23,6 +23,38 @@
     --ok:#3ddc84; --warn:#F5A524; --bad:#ff6b5e; --gold:#FFC46B;
     --mono:'JetBrains Mono',ui-monospace,Consolas,monospace;
   }
+  /* ===== ☀️ tema claro (aditivo: o escuro fica intacto) ===== */
+  [data-theme="light"]{
+    --bg:#F4F3FB;
+    --glass:rgba(255,255,255,.74);
+    --glass2:rgba(124,79,240,.07);
+    --line:rgba(40,26,90,.12); --line2:rgba(90,64,200,.22);
+    --tx:#1B1830; --tx2:#565073; --tx3:#8A83A2;
+    --ac:#7C4FF0; --ac2:#6A3CE0;
+    --gold:#B07400;
+  }
+  [data-theme="light"] .aurora .b1{background:radial-gradient(circle,#dcd0ff 0%,transparent 62%); opacity:.6}
+  [data-theme="light"] .aurora .b2{background:radial-gradient(circle,#ffe6c4 0%,transparent 62%); opacity:.5}
+  [data-theme="light"] .aurora .b3{background:radial-gradient(circle,#e9dcff 0%,transparent 62%); opacity:.5}
+  [data-theme="light"] #gridDots{background-image:radial-gradient(rgba(70,50,150,.09) 1.2px, transparent 1.2px); opacity:.5}
+  [data-theme="light"] .modal{background:rgba(255,255,255,.95)}
+  [data-theme="light"] .drawer{background:rgba(249,248,254,.92)}
+  [data-theme="light"] .ui-dlg,[data-theme="light"] .ui-toast,[data-theme="light"] .more-menu{background:rgba(255,255,255,.98)}
+  [data-theme="light"] .overlay{background:rgba(40,34,66,.34)}
+  [data-theme="light"] .node .tag{background:rgba(255,255,255,.84)}
+  [data-theme="light"] .helper{background:rgba(255,255,255,.68); color:var(--tx2)}
+  [data-theme="light"] .collab-banner{background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(249,248,254,.98))}
+  [data-theme="light"] .bub.ai{background:#fff}
+  [data-theme="light"] .chip{background:rgba(40,26,90,.06)}
+  [data-theme="light"] .expand-dot,[data-theme="light"] .sdot{border-color:var(--bg)}
+  [data-theme="light"] .node .orb{box-shadow:0 8px 26px rgba(60,40,120,.16), inset 0 1px 0 rgba(255,255,255,.65)}
+  [data-theme="light"] ::-webkit-scrollbar-thumb{background:rgba(90,64,200,.28)}
+  [data-theme="light"] .f input,[data-theme="light"] .f textarea,[data-theme="light"] .f select,
+  [data-theme="light"] .td-in,[data-theme="light"] .todo-add input,[data-theme="light"] .composer textarea,
+  [data-theme="light"] .chat-head select,[data-theme="light"] .notes,[data-theme="light"] #searchInput,
+  [data-theme="light"] #pjMemory,[data-theme="light"] .ui-dlg input,[data-theme="light"] #ghTokenInput{
+    background:rgba(30,20,70,.05) !important}
+  [data-theme="light"] .bub code,[data-theme="light"] .bub pre{background:rgba(30,20,70,.07)}
   *{box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent}
   html,body{height:100%; overflow:hidden}
   body{background:var(--bg); color:var(--tx); font:15px/1.6 'Inter',system-ui,sans-serif}
@@ -397,6 +429,7 @@
     .node:hover .orb, .btn:hover, .btn:active, .btn.primary:hover, .mini-item:hover{transform:none !important}
   }
 </style>
+<script>try{if(localStorage.getItem("workspace-map-v3-theme")==="light")document.documentElement.setAttribute("data-theme","light");}catch(e){}</script>
 </head>
 <body>
 
@@ -438,6 +471,7 @@
   <div class="more-wrap">
     <button class="btn ic" id="moreBtn" onclick="toggleMore(event)" title="Mais opções" aria-label="Mais opções" aria-haspopup="true" aria-expanded="false">⋯</button>
     <div class="more-menu" id="moreMenu" role="menu">
+      <button class="mm" role="menuitem" id="themeToggle" onclick="closeMore();toggleTheme()">☀️ Tema claro</button>
       <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
       <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>
       <button class="mm" role="menuitem" onclick="closeMore();exportData()">⬇ Backup</button>
@@ -1554,6 +1588,18 @@ function toggleMore(e){ if(e) e.stopPropagation(); const m=document.getElementBy
 function closeMore(){ const m=document.getElementById("moreMenu"); if(m) m.classList.remove("show");
   const b=document.getElementById("moreBtn"); if(b) b.setAttribute("aria-expanded","false"); }
 document.addEventListener("click",e=>{ if(!(e.target.closest&&e.target.closest(".more-wrap"))) closeMore(); });
+
+/* tema claro/escuro (preferência LOCAL por navegador, como a câmera) */
+function applyTheme(t){
+  const light = t==="light";
+  document.documentElement.setAttribute("data-theme", light?"light":"dark");
+  const lbl=document.getElementById("themeToggle"); if(lbl) lbl.textContent = light?"🌙 Tema escuro":"☀️ Tema claro";
+  const meta=document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute("content", light?"#F4F3FB":"#0B0A12");
+}
+function toggleTheme(){
+  const next = document.documentElement.getAttribute("data-theme")==="light" ? "dark" : "light";
+  applyTheme(next); localStorage.setItem(LS_KEY+"-theme", next);
+}
 
 function exportData(){
   // NÃO exporta segredos: token do GitHub, chaves de IA, mcpUrl e histórico do dock ficam de fora
@@ -4006,6 +4052,7 @@ document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState=
 setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true); }, 5*60*1000);
 
 /* ================= go ================= */
+applyTheme(localStorage.getItem(LS_KEY+"-theme")==="light"?"light":"dark"); // sincroniza rótulo do menu + meta theme-color
 render();
 initDock();
 wsBoot();

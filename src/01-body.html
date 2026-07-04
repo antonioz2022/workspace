@@ -38,6 +38,7 @@
   <div class="more-wrap">
     <button class="btn ic" id="moreBtn" onclick="toggleMore(event)" title="Mais opções" aria-label="Mais opções" aria-haspopup="true" aria-expanded="false">⋯</button>
     <div class="more-menu" id="moreMenu" role="menu">
+      <button class="mm" role="menuitem" id="themeToggle" onclick="closeMore();toggleTheme()">☀️ Tema claro</button>
       <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
       <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>
       <button class="mm" role="menuitem" onclick="closeMore();exportData()">⬇ Backup</button>

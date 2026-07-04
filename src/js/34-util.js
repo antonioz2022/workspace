@@ -10,6 +10,18 @@ function closeMore(){ const m=document.getElementById("moreMenu"); if(m) m.class
   const b=document.getElementById("moreBtn"); if(b) b.setAttribute("aria-expanded","false"); }
 document.addEventListener("click",e=>{ if(!(e.target.closest&&e.target.closest(".more-wrap"))) closeMore(); });
 
+/* tema claro/escuro (preferência LOCAL por navegador, como a câmera) */
+function applyTheme(t){
+  const light = t==="light";
+  document.documentElement.setAttribute("data-theme", light?"light":"dark");
+  const lbl=document.getElementById("themeToggle"); if(lbl) lbl.textContent = light?"🌙 Tema escuro":"☀️ Tema claro";
+  const meta=document.querySelector('meta[name="theme-color"]'); if(meta) meta.setAttribute("content", light?"#F4F3FB":"#0B0A12");
+}
+function toggleTheme(){
+  const next = document.documentElement.getAttribute("data-theme")==="light" ? "dark" : "light";
+  applyTheme(next); localStorage.setItem(LS_KEY+"-theme", next);
+}
+
 function exportData(){
   // NÃO exporta segredos: token do GitHub, chaves de IA, mcpUrl e histórico do dock ficam de fora
   const clean = (typeof sanitizeStateForSync==="function") ? sanitizeStateForSync() : DB;
