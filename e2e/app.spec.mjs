@@ -761,6 +761,30 @@ test("▶ Retomar: 'onde você parou' auto-derivado, foco opcional que viaja, e 
   expect(banner.txt).toContain("Retomar em Site");
 });
 
+test("💾 Salvar progresso: 1 clique grava o checkpoint na memória (sem IA) e o painel destaca", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  // lógica pura: applyProgress escreve o '🎯 Onde parei' + a sessão datada na memória
+  const res = await page.evaluate(() => {
+    const p = DB.companies[0].projects[0];
+    teleCache[p.id] = { git: { ts: Date.now(), msg: "wip auth", branch: "main" }, repo: { defBranch: "main" } };
+    p.todos = [{ t: "ligar proativo", done: false }];
+    applyProgress(p, "terminei o webhook, falta testar com lead real");
+    return { ctx: p.context, focus: projFocus(p) };
+  });
+  expect(res.ctx).toContain("🎯 Onde parei: terminei o webhook");
+  expect(res.ctx).toContain("## Sessão (");
+  expect(res.focus).toContain("terminei o webhook");   // vira o título "onde você parou" no painel
+  // via UI: botão "💾 Salvar" + diálogo (nota) → grava sem IA
+  await page.evaluate(() => { const p = DB.companies[0].projects[0]; sel = { id: p.id, co: DB.companies[0], pj: p, type: "pj" }; openDrawer(findNode(p.id)); });
+  await page.locator("#drawer").getByRole("button", { name: "💾 Salvar", exact: true }).click();
+  await page.locator(".ui-dlg input").fill("checkpoint pela UI");
+  await page.locator('.ui-dlg button:has-text("Salvar")').click();
+  await expect(page.locator(".ui-toast")).toContainText("Progresso salvo");
+  const after = await page.evaluate(() => DB.companies[0].projects[0].context);
+  expect(after).toContain("checkpoint pela UI");
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);

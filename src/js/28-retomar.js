@@ -37,13 +37,44 @@ function resumeState(p){
 function resumeBlockHtml(p){
   const r=resumeState(p);
   return `<div style="background:linear-gradient(180deg,rgba(139,92,246,.10),rgba(139,92,246,.03));border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-weight:700;font-size:11px;color:var(--ac2);letter-spacing:.03em">▶ ONDE VOCÊ PAROU</span>
-      <button class="btn sm ghost" style="padding:2px 8px" onclick="editFocus('${p.id}')" title="definir um foco manual (opcional) — some se deixar vazio">${r.foco?"✎":"＋ foco"}</button>
+      <span style="display:flex;gap:6px">
+        <button class="btn sm ghost" style="padding:2px 8px" onclick="saveProgress('${p.id}')" title="grava um checkpoint do progresso na memória, com 1 clique — sem depender de IA">💾 Salvar</button>
+        <button class="btn sm ghost" style="padding:2px 8px" onclick="editFocus('${p.id}')" title="definir um foco manual (opcional) — some se deixar vazio">${r.foco?"✎":"＋ foco"}</button>
+      </span>
     </div>
     <div style="font-size:13px;color:var(--tx);margin:5px 0 ${r.lines.length?"6px":"0"};font-weight:${r.foco?"600":"400"}">${r.foco?"🎯 ":""}${esc(r.headline)}</div>
     ${r.lines.length?`<div style="font-size:11.5px;color:var(--tx3);display:flex;flex-direction:column;gap:2px">${r.lines.map(l=>`<span>${esc(l)}</span>`).join("")}</div>`:""}
   </div>`;
+}
+/* 💾 Salvar progresso: 1 clique grava um checkpoint na memória do projeto (MESMO formato da
+   tool MCP checkpoint) — SEM depender de IA. Pega o "onde parei" auto-derivado + nota opcional. */
+function applyProgress(p, note){
+  const r=resumeState(p);
+  const nextLine=((note||"").trim()) || r.headline;
+  const date=todayStr();
+  const bodyLines=[]; if((note||"").trim()) bodyLines.push((note||"").trim());
+  for(const l of r.lines) bodyLines.push("- "+l);
+  const session=`## Sessão (${date})\n${bodyLines.length?bodyLines.join("\n"):"(checkpoint manual)"}\n`;
+  let title=`# Memória — ${p.name}`, gotTitle=false; const rest=[];
+  for(const ln of (p.context||"").split("\n")){
+    if(!gotTitle && /^#\s+/.test(ln)){ title=ln.trim(); gotTitle=true; continue; }
+    if(/^[*#\s]*(?:🎯\s*)?(?:onde parei|foco atual)\s*[:*\-]/i.test(ln)) continue;   // remove o "onde parei" antigo
+    rest.push(ln);
+  }
+  const body=rest.join("\n").replace(/^\n+/,"");
+  p.context=(`${title}\n\n🎯 Onde parei: ${nextLine.replace(/\s+/g," ").trim()}\n\n${session}\n${body}`).replace(/\n{3,}/g,"\n\n").replace(/\s+$/,"")+"\n";
+  p.focus="";   // o "onde parei" agora vive na memória (linha 🎯) — evita fonte duplicada
+}
+async function saveProgress(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj") return;
+  const note=await uiPrompt({title:"💾 Salvar progresso", message:"O que você fez / onde parou? (opcional — vazio usa o resumo automático dos sinais)", value:"", placeholder:"ex.: terminei o webhook, falta testar com lead real", okLabel:"Salvar"});
+  if(note===null) return;   // cancelou
+  applyProgress(f.pj, note);
+  f.pj._memDirty=true; save(); if(typeof scheduleSync==="function") scheduleSync();
+  openDrawer(findNode(pid));
+  if(typeof uiToast==="function") uiToast("Progresso salvo na memória — sincroniza com a brain; você retoma daqui em qualquer aparelho ou conta de IA.","ok");
 }
 function editFocus(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
