@@ -59,6 +59,15 @@
   @keyframes toastIn{from{opacity:0; transform:translateY(12px)}}
   @keyframes toastOut{to{opacity:0; transform:translateY(8px)}}
 
+  /* ===== cards de conectar IA ===== */
+  .ai-cards{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+  @media(max-width:640px){.ai-cards{grid-template-columns:1fr}}
+  .ai-card{border:1px solid var(--line); border-radius:13px; padding:14px; background:var(--glass2); display:flex; flex-direction:column; gap:8px}
+  .ai-card .ai-h{display:flex; align-items:center; gap:8px; font-size:14px}
+  .ai-card .ai-ic{width:26px; height:26px; border-radius:8px; display:grid; place-items:center; font-size:14px; border:1px solid var(--line2)}
+  .ai-card p{color:var(--tx3); font-size:11.5px; margin:0; flex:1; line-height:1.4}
+  .ai-card .btn{justify-content:center}
+
   /* ===== fundo ===== */
   .aurora{position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none}
   .blob{position:absolute; border-radius:50%; filter:blur(120px); opacity:.45; animation:drift 30s ease-in-out infinite alternate}
@@ -492,17 +501,38 @@
   </div>
 
   <div class="tabpane" id="tab-ias">
-    <h3 style="font-size:15px; margin:0 0 4px">🤖 IAs conectadas à brain (Claude · ChatGPT)</h3>
-    <p style="color:var(--tx2); font-size:12px; margin:0 0 8px">
-      Copia a URL do conector e cola na IA — autoriza com teu GitHub. Aqui você vê e <b>desconecta</b> (revogação real, na hora).<br>
-      <b>Claude:</b> Configurações → Conectores → Adicionar conector personalizado.<br>
-      <b>ChatGPT:</b> Settings → Connectors → Advanced → <b>Developer mode</b> ON → Create. <span style="color:var(--tx3)">(exige plano pago; em Plus/Pro só LEITURA — escrita na brain via GPT é restrição da OpenAI)</span>
+    <h3 style="font-size:15px; margin:0 0 3px">🤖 Conectar uma IA à brain</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 12px">
+      Um clique te leva pronto — a URL do conector já vai copiada. Depois é só <b>colar</b> e <b>Autorizar</b> com teu GitHub.
     </p>
-    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
-      <input id="mcpUrlInput" placeholder="https://workspace-mcp.antonioz2022.workers.dev" oninput="setMcpUrl(this.value)" style="flex:1">
-      <button class="btn sm primary" id="mcpCopyBtn" onclick="copyMcpUrl()">📋 Copiar URL do conector</button>
-      <button class="btn sm" onclick="renderMcpConnections()">🔄</button>
+    <div class="ai-cards">
+      <div class="ai-card">
+        <div class="ai-h"><span class="ai-ic" style="background:rgba(217,119,66,.15);border-color:rgba(217,119,66,.4)">🟠</span><b>Claude</b></div>
+        <p>Abre a página de conectores com a URL já copiada.</p>
+        <button class="btn sm primary" onclick="connectClaude()">Conectar ao Claude →</button>
+      </div>
+      <div class="ai-card">
+        <div class="ai-h"><span class="ai-ic" style="background:rgba(61,220,132,.14);border-color:rgba(61,220,132,.4)">🟢</span><b>ChatGPT</b></div>
+        <p>Precisa de plano pago + Developer mode. Em Plus/Pro, só leitura.</p>
+        <button class="btn sm primary" onclick="connectChatGPT()">Conectar ao ChatGPT →</button>
+      </div>
+      <div class="ai-card">
+        <div class="ai-h"><span class="ai-ic">⚡</span><b>Cursor / VS Code</b> <span style="font-size:10px;color:var(--ok);font-family:var(--mono)">1-CLIQUE</span></div>
+        <p>Deep-link oficial: instala e conecta sozinho (pra devs).</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn sm" onclick="addToCursor()">Add to Cursor</button>
+          <button class="btn sm" onclick="addToVSCode()">Add to VS Code</button>
+        </div>
+      </div>
     </div>
+    <div style="display:flex; gap:8px; align-items:center; margin:14px 0 4px">
+      <input id="mcpUrlInput" placeholder="https://workspace-mcp.antonioz2022.workers.dev" oninput="setMcpUrl(this.value)" style="flex:1">
+      <button class="btn sm" id="mcpCopyBtn" onclick="copyMcpUrl()">📋 Copiar URL</button>
+    </div>
+    <p style="color:var(--tx3); font-size:11px; margin:0 0 16px">
+      ⓘ Claude e ChatGPT não deixam um site autorizar por você (segurança) — o <b>Authorize</b> é sempre lá dentro. O botão te leva pronto pra colar.
+    </p>
+    <div class="dr-sec" style="margin-top:6px">IAs conectadas <span style="cursor:pointer;color:var(--tx3)" onclick="renderMcpConnections()">🔄</span></div>
     <div id="mcpConnList"><div class="dr-desc" style="color:var(--tx3)">—</div></div>
   </div>
   <div class="tabpane" id="tab-vigia">
@@ -2756,8 +2786,31 @@ function setMcpUrl(v){ DB.settings=DB.settings||{}; DB.settings.mcpUrl=(v||"").t
 async function copyMcpUrl(){
   const ok=await copyText(mcpUrl()+"/mcp");
   const b=document.getElementById("mcpCopyBtn");
-  if(b){ b.textContent=ok?"✓ copiado — cole no Claude":"⚠ veja o console"; if(!ok) console.log(mcpUrl()+"/mcp");
-    setTimeout(()=>{ b.textContent="📋 Copiar URL do conector"; }, 2600); }
+  if(b){ b.textContent=ok?"✓ copiado":"⚠ veja o console"; if(!ok) console.log(mcpUrl()+"/mcp");
+    setTimeout(()=>{ b.textContent="📋 Copiar URL"; }, 2200); }
+}
+/* ===== conectar IA: 1 botão que já leva pronto ===== */
+function connectorUrl(){ return mcpUrl()+"/mcp"; }
+async function connectClaude(){
+  await copyText(connectorUrl());
+  window.open("https://claude.ai/settings/connectors","_blank","noopener");
+  uiToast("URL copiada ✓  No Claude: clique '＋ Adicionar conector personalizado', cole a URL e Autorize com teu GitHub.", "ok");
+}
+async function connectChatGPT(){
+  await copyText(connectorUrl());
+  window.open("https://chatgpt.com","_blank","noopener");
+  uiToast("URL copiada ✓  No ChatGPT: Settings → Connectors → (Developer mode) → Create → cole a URL. Exige plano pago.", "ok");
+}
+function addToCursor(){
+  const cfg=btoa(JSON.stringify({url:connectorUrl()}));
+  const href="cursor://anysphere.cursor-deeplink/mcp/install?name=cortex&config="+cfg;
+  location.href=href;
+  uiToast("Abrindo o Cursor… confirme a instalação do conector 'cortex'.", "ok");
+}
+function addToVSCode(){
+  const obj={name:"cortex", type:"http", url:connectorUrl()};
+  location.href="vscode:mcp/install?"+encodeURIComponent(JSON.stringify(obj));
+  uiToast("Abrindo o VS Code… confirme a instalação do MCP 'cortex'.", "ok");
 }
 function mcpDate(n){ if(!n) return "—"; if(n<1e12) n*=1000; return new Date(n).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); }
 async function renderMcpConnections(){
