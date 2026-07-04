@@ -35,6 +35,7 @@ function openDrawer(f){
     const c=f.co, p=f.pj;
     kind.textContent="projeto · "+c.name; title.textContent=p.name; em.innerHTML=drawerIcon(p,"🚀");
     body.innerHTML=`
+      ${typeof resumeBlockHtml==="function"?resumeBlockHtml(p):""}
       <div class="chips" style="margin-bottom:12px">
         <span class="chip" style="color:${p.status==='ativo'?'var(--ok)':(p.status==='pausado'?'var(--warn)':'var(--tx2)')}">● ${p.status||"ativo"}</span>
         <span class="chip">${p.apps.length} serviço(s)</span>
@@ -140,6 +141,7 @@ function jumpTo(id){
   const f=findNode(id); if(!f) return;
   if(f.type==="pj"){ expanded.add(f.co.id); }
   if(f.type==="ap"){ expanded.add(f.co.id); expanded.add(f.pj.id); }
+  if(typeof markRecent==="function") markRecent(id);   // recência p/ o "▶ Retomar" (sincroniza)
   sel={id, ...f};
   // centraliza no nó
   cam.x = innerWidth/2 - f.item.x*cam.z;

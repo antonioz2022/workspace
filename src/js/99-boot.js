@@ -25,7 +25,8 @@ initDock();
 wsBoot();
 if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
 ensureBrain();
-if(stateSyncOn()) setTimeout(()=>pullState().catch(()=>{}), 600);
+if(typeof renderResumeBanner==="function") renderResumeBanner();   // ▶ Retomar (recência local; re-renderiza após o pull)
+if(stateSyncOn()) setTimeout(()=>{ pullState().catch(()=>{}).then(()=>{ if(typeof renderResumeBanner==="function") renderResumeBanner(); }); }, 600);
 if(typeof startCollabPoll==="function") startCollabPoll();   // colaboração viva: avisa quando alguém atualiza
 { const d=patDays(); const b=document.getElementById("contasBtn"); if(b && d!==null && d<10) b.textContent="⚙ Contas ⚠"; }
 // PWA: registra o service worker (só quando servido por http/https; abrir de file:// segue funcionando)

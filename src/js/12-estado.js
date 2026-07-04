@@ -38,6 +38,8 @@ function hardenDB(db){
   }
   if(db.settings && Array.isArray(db.settings.providers)) for(const pr of db.settings.providers) pr.id=safeId(pr.id);
   if(Array.isArray(db.links)) for(const l of db.links){ l.id=safeId(l.id); if(typeof l.type!=="string") l.type="relacionado"; }
+  // recentPids são REFERÊNCIAS a ids: mantém só as que batem o padrão seguro (dangling some no render)
+  if(db.settings && Array.isArray(db.settings.recentPids)) db.settings.recentPids=db.settings.recentPids.filter(x=>typeof x==="string" && /^[A-Za-z0-9_-]{1,40}$/.test(x));
   return db;
 }
 function migrate(db){

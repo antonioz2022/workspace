@@ -721,6 +721,46 @@ test("panorama + detalhe: indexa docs do código (README) e a busca alcança o d
   expect(codeN, "sem includeCode não puxa docs do código").toBe(0);
 });
 
+test("▶ Retomar: 'onde você parou' auto-derivado, foco opcional que viaja, e banner do recente", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  // sinais que o sistema já tem: commit, branch WIP, PR, pendências — sem digitar nada
+  const r = await page.evaluate(() => {
+    const p = DB.companies[0].projects[0];
+    teleCache[p.id] = { git: { branch: "feature/x", ts: Date.now() - 3600000, msg: "feat: webhook novo", hash: "abc1234" }, repo: { defBranch: "main" }, prs: [{ num: 7, title: "PR do webhook" }] };
+    p.todos = [{ t: "testar com lead real", done: false, prio: "alta" }, { t: "documentar", done: false }];
+    save();
+    const st = resumeState(p);
+    return { headline: st.headline, lines: st.lines.join(" | ") };
+  });
+  expect(r.headline, "título auto vem do último commit").toContain("webhook");
+  expect(r.lines).toContain("último commit");
+  expect(r.lines).toContain("feature/x");
+  expect(r.lines).toContain("PR aberto #7");
+  expect(r.lines).toContain("próximo: testar com lead real");
+  // aparece no topo do drawer, sem interação
+  await page.evaluate(() => { const p = DB.companies[0].projects[0]; sel = { id: p.id, co: DB.companies[0], pj: p, type: "pj" }; openDrawer(findNode(p.id)); });
+  await expect(page.locator("#drawer")).toContainText("ONDE VOCÊ PAROU");
+  await expect(page.locator("#drawer")).toContainText("webhook");
+  // foco manual (opcional) sobrepõe e viaja pra brain (projeto.md)
+  const brain = await page.evaluate(() => {
+    const c = DB.companies[0], p = c.projects[0]; p.focus = "parei no deploy, falta a env var";
+    return { headline: resumeState(p).headline, md: genProjetoMd(c, p) };
+  });
+  expect(brain.headline).toBe("parei no deploy, falta a env var");
+  expect(brain.md).toContain("Onde parei / foco atual");
+  expect(brain.md).toContain("falta a env var");
+  // banner "▶ Retomar" aparece pro projeto tocado por último (recentPids sincroniza cross-device)
+  const banner = await page.evaluate(() => {
+    markRecent(DB.companies[0].projects[0].id); save();
+    resumeDismissed = false; renderResumeBanner();
+    const el = document.getElementById("resumeBanner");
+    return { show: el.classList.contains("show"), txt: el.textContent };
+  });
+  expect(banner.show).toBe(true);
+  expect(banner.txt).toContain("Retomar em Site");
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);

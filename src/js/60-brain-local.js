@@ -88,7 +88,7 @@ function genProjetoMd(c,p){
   return `# ${p.name}
 **Empresa:** ${c.name}${c.desc?` (${c.desc})`:""}
 **Status:** ${p.status||"ativo"} · **Custo:** ~US$ ${pjCost(p).toFixed(0)}/mês
-
+${p.focus?`\n**🎯 Onde parei / foco atual:** ${p.focus}\n`:""}
 ${p.desc||""}
 ${profileBlock(p.profile)}
 ## Serviços & assinaturas
