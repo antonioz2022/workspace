@@ -375,6 +375,36 @@ test("polish: skeleton na telemetria + estados vazios (cockpit/busca)", async ({
   await expect(page.locator("#searchResults .empty-mini")).toContainText("Nada encontrado");
 });
 
+test("agenda de prazos: agrupa por urgência, conta vencidas e navega", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  await abrirDrawerProjeto(page, "Site");
+  // 3 pendências: uma vencida, uma daqui a 3 dias, uma sem data
+  await page.evaluate(() => {
+    const p = DB.companies[0].projects[0];
+    const d = new Date(); const iso = x => { const t = new Date(d); t.setDate(t.getDate() + x); return t.toISOString().slice(0, 10); };
+    p.todos = [
+      { t: "pagar servidor", done: false, due: iso(-2), prio: "alta", owner: "antonio" },
+      { t: "revisar copy", done: false, due: iso(3) },
+      { t: "sem prazo", done: false },
+    ];
+    save(); render();
+  });
+  await page.evaluate(() => openAgenda());
+  const body = page.locator("#agendaBody");
+  await expect(body.locator(".agenda-h", { hasText: "Vencidas" })).toBeVisible();
+  await expect(body.locator(".agenda-h", { hasText: "Próximos 7 dias" })).toBeVisible();
+  await expect(body).toContainText("pagar servidor");
+  await expect(body).toContainText("revisar copy");
+  await expect(body).not.toContainText("sem prazo");            // sem data não entra
+  // clicar leva ao projeto
+  await body.locator('.mini-item:has-text("pagar servidor")').click();
+  await expect(page.locator("#drTitle")).toHaveText("Site");
+  // o cockpit mostra o chip de vencidas
+  await page.evaluate(() => openCockpit());
+  await expect(page.locator("#cockpitBody")).toContainText("vencida(s)");
+});
+
 test("tema claro/escuro: alterna, muda o fundo e persiste no reload", async ({ page }) => {
   const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(await bg()).toBe("rgb(11, 10, 18)");                 // escuro (#0B0A12) por padrão

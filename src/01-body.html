@@ -41,6 +41,7 @@
       <button class="mm" role="menuitem" id="themeToggle" onclick="closeMore();toggleTheme()">☀️ Tema claro</button>
       <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
       <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>
+      <button class="mm" role="menuitem" onclick="closeMore();openAgenda()">📅 Agenda de prazos</button>
       <button class="mm" role="menuitem" onclick="closeMore();exportData()">⬇ Backup</button>
       <button class="mm" role="menuitem" onclick="closeMore();document.getElementById('importFile').click()">⬆ Restaurar</button>
     </div>
@@ -306,6 +307,13 @@
     onkeydown="if(event.key==='Enter'){const r=document.querySelector('#searchResults .mini-item'); if(r) r.click();}"
     style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:11px 14px; font-size:14px; font-family:inherit; margin-top:6px">
   <div id="searchResults" class="mini-list" style="margin-top:12px; max-height:52vh; overflow:auto"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
+</div></div>
+
+<div class="overlay" id="agendaModal"><div class="modal" style="width:min(620px,94vw)">
+  <h3>📅 Agenda de prazos</h3>
+  <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">Tudo que tem prazo e ainda está aberto, de todos os projetos, do mais urgente ao mais distante. Clique pra ir ao projeto.</p>
+  <div id="agendaBody" class="mini-list" style="max-height:60vh; overflow:auto"></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
 </div></div>
 

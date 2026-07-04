@@ -23,6 +23,7 @@ function renderCockpit(){
       <span class="chip">${rows.length} projeto(s)</span>
       <span class="chip">${rows.reduce((s,r)=>s+r.open,0)} pendência(s) aberta(s)</span>
       ${rows.some(r=>r.t&&r.t.repo)?`<span class="chip">🐛 ${rows.reduce((s,r)=>s+((r.t&&r.t.repo)?r.t.repo.openIssues:0),0)} issues+PRs</span>`:""}
+      ${(function(){const n=overdueCount(); return n?`<span class="chip" style="color:var(--bad)" onclick="closeModals();openAgenda()" title="ver na Agenda">📅 ${n} vencida(s)</span>`:"";})()}
       <span class="chip" style="color:${rows.some(r=>r.alerts)?'var(--warn)':'var(--ok)'}">${rows.reduce((s,r)=>s+r.alerts,0)} alerta(s)</span>
       <span class="chip cost">~US$ ${totCost.toFixed(0)}/mês</span>
     </div>
@@ -42,6 +43,56 @@ function renderCockpit(){
       </div>`;
     }).join("") : `<div class="empty-mini"><span class="ico">🗺️</span>Sem projetos ainda. Crie uma empresa e um projeto no mapa pra ver tudo agregado aqui: pendências, alertas, commits e custo.</div>`}
     <div id="ckFeed"></div>`;
+}
+
+/* ===== 📅 Agenda de prazos: pendências abertas COM data, agrupadas por urgência ===== */
+function daysUntil(due){ const d=new Date(due+"T00:00:00"), t=new Date(todayStr()+"T00:00:00"); return Math.round((d-t)/86400000); }
+function dueLabel(due){ const n=daysUntil(due);
+  if(n<0) return n===-1?"venceu ontem":"venceu há "+(-n)+" dias";
+  if(n===0) return "vence hoje"; if(n===1) return "vence amanhã"; if(n<=7) return "vence em "+n+" dias";
+  return "vence em "+Math.round(n/7)+" sem"; }
+function agendaItems(){
+  const items=[];
+  for(const c of DB.companies) for(const p of c.projects) (p.todos||[]).forEach(t=>{
+    if(t.done || !/^\d{4}-\d{2}-\d{2}$/.test(t.due||"")) return;
+    items.push({due:t.due, prio:t.prio, owner:t.owner, text:(t.t||"").split("\n")[0], pjId:p.id, pjName:p.name, coName:c.name});
+  });
+  const po={alta:0,media:1,baixa:2};
+  items.sort((a,b)=> a.due.localeCompare(b.due) || (po[a.prio]!=null?po[a.prio]:9)-(po[b.prio]!=null?po[b.prio]:9));
+  return items;
+}
+function overdueCount(){ const today=todayStr(); return agendaItems().filter(i=>i.due<today).length; }
+function openAgenda(){ renderAgenda(); document.getElementById("agendaModal").classList.add("open"); }
+function agendaGo(pjId){ closeModals(); jumpTo(pjId); }
+function renderAgenda(){
+  const box=document.getElementById("agendaBody"); if(!box) return;
+  const items=agendaItems(), today=todayStr();
+  if(!items.length){ box.innerHTML=`<div class="empty-mini"><span class="ico">📅</span>Nenhuma pendência com prazo ainda. Coloque uma data (📅) nas pendências e elas aparecem aqui, ordenadas por urgência.</div>`; return; }
+  const groups=[
+    {label:"⚠️ Vencidas", cls:"agr-over", test:i=>i.due<today},
+    {label:"🔥 Hoje", test:i=>i.due===today},
+    {label:"🗓️ Próximos 7 dias", test:i=>{const n=daysUntil(i.due); return n>0&&n<=7;}},
+    {label:"🌤️ Depois", test:i=>daysUntil(i.due)>7},
+  ];
+  let html="";
+  for(const g of groups){
+    const gi=items.filter(g.test); if(!gi.length) continue;
+    html+=`<div class="agenda-h ${g.cls||""}">${g.label} <span class="n">${gi.length}</span></div>`;
+    html+=gi.map(i=>{
+      const over=i.due<today;
+      const prioB=i.prio?`<span class="tb tb-${i.prio}">${prioMark[i.prio]||""} ${prioName[i.prio]||""}</span>`:"";
+      const ownerB=i.owner?`<span class="tb">@${esc(i.owner)}</span>`:"";
+      return `<div class="mini-item" onclick="agendaGo('${i.pjId}')">
+        <span class="mi-emoji">${over?"🔴":"📅"}</span>
+        <span style="flex:1;min-width:0">
+          <b style="font-size:13px">${esc(i.text)}</b>${prioB}${ownerB}<br>
+          <span style="font-size:11px;color:var(--tx3)">${esc(i.pjName)} · ${esc(i.coName)} · <span style="color:${over?"var(--bad)":"var(--tx2)"}">${esc(i.due)} (${esc(dueLabel(i.due))})</span></span>
+        </span>
+        <span class="arrow">→</span>
+      </div>`;
+    }).join("");
+  }
+  box.innerHTML=html;
 }
 
 /* ===== 📜 Feed de atividade — commits da brain traduzidos pra gente ===== */
