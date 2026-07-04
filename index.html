@@ -226,6 +226,13 @@
   .todo-item.done span.t{color:var(--tx3); text-decoration:line-through}
   .todo-item .x{margin-left:auto; color:var(--tx3); cursor:pointer; opacity:.4}
   .todo-item .x:hover{color:var(--bad); opacity:1}
+  .todo-item .td-ed{margin-left:auto; color:var(--tx3); cursor:pointer; opacity:.4; font-size:12px}
+  .todo-item .td-ed:hover{color:var(--ac2); opacity:1}
+  .tb{display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:600; padding:1px 7px; border-radius:99px; background:var(--glass2); border:1px solid var(--line2); color:var(--tx2); margin-left:5px; vertical-align:middle; white-space:nowrap}
+  .tb.tb-alta{border-color:rgba(255,107,94,.5)} .tb.tb-media{border-color:rgba(245,165,36,.5)} .tb.tb-baixa{border-color:rgba(61,220,132,.4)}
+  .tb.tb-over{background:rgba(255,107,94,.16); border-color:var(--bad); color:#ffb3aa}
+  .td-in{background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:9px; color:var(--tx); padding:5px 9px; font-size:12px; font-family:inherit}
+  .td-in:focus{outline:none; border-color:var(--ac)}
   .todo-add{display:flex; gap:8px; margin-top:10px}
   .todo-add input{flex:1; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:10px; color:var(--tx); padding:8px 12px; font-size:13px; font-family:inherit}
   .todo-add input:focus{outline:none; border-color:var(--ac)}
@@ -366,6 +373,7 @@
 
 <div class="topright">
   <button class="btn" id="wsPill" onclick="openWsModal()" title="Trocar de workspace">🗂 Workspace</button>
+  <button class="btn" onclick="openSearch()" title="Buscar em tudo (Ctrl+K)">🔎 Buscar</button>
   <button class="btn" id="brainBtn" onclick="connectBrainClick()">🧠 Conectar cérebro</button>
   <button class="btn" onclick="openCockpit()">🎛 Cockpit</button>
   <button class="btn" id="contasBtn" onclick="openAiModal()">⚙ Contas</button>
@@ -602,6 +610,22 @@
   <div class="modal-foot">
     <button class="btn" onclick="closeModals()">Fechar</button>
   </div>
+</div></div>
+
+<div class="overlay" id="searchModal"><div class="modal" style="width:min(600px,94vw)">
+  <h3>🔎 Buscar</h3>
+  <input id="searchInput" placeholder="empresa, projeto, pendência, serviço, memória…" oninput="runSearch()"
+    onkeydown="if(event.key==='Enter'){const r=document.querySelector('#searchResults .mini-item'); if(r) r.click();}"
+    style="width:100%; background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:11px 14px; font-size:14px; font-family:inherit; margin-top:6px">
+  <div id="searchResults" class="mini-list" style="margin-top:12px; max-height:52vh; overflow:auto"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
+</div></div>
+
+<div class="overlay" id="histModal"><div class="modal" style="width:min(560px,94vw)">
+  <h3>🕘 Histórico da workspace</h3>
+  <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">Cada sincronização vira uma versão (é o histórico git do <code>state.json</code>). Clique numa pra voltar a workspace pra aquele ponto. O atual vira o topo, então dá pra voltar de novo.</p>
+  <div id="histBody" class="mini-list" style="max-height:56vh; overflow:auto"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
 </div></div>
 
 <div class="overlay" id="cockpitModal"><div class="modal" style="width:min(780px,94vw)">
@@ -1100,14 +1124,30 @@ function openDrawer(f){
       </div>
       <div style="margin-top:14px"><button class="btn sm primary" onclick="openAppModalFor('${p.id}')">＋ Adicionar serviço</button></div>
       <div class="dr-sec">Pendências</div>
-      ${p.todos.map((t,i)=>`
-        <div class="todo-item ${t.done?'done':''}">
+      ${p.todos.map((t,i)=>{
+        if(editingTodo===p.id+":"+i){
+          return `<div class="todo-item" style="flex-wrap:wrap; gap:6px">
+            <span class="t" style="flex:1 1 100%; font-size:12px; color:var(--tx2)">${esc((t.t||"").split("\n")[0])}</span>
+            <select id="tdPrio" class="td-in"><option value="">— prioridade</option><option value="alta"${t.prio==="alta"?" selected":""}>🔴 alta</option><option value="media"${t.prio==="media"?" selected":""}>🟡 média</option><option value="baixa"${t.prio==="baixa"?" selected":""}>🟢 baixa</option></select>
+            <input id="tdOwner" class="td-in" placeholder="@dono" value="${esc(t.owner||"")}" style="width:100px">
+            <input id="tdDue" class="td-in" type="date" value="${esc(t.due||"")}">
+            <button class="btn sm primary" onclick="saveTodoMeta('${p.id}',${i})">ok</button>
+            <button class="btn sm ghost" onclick="editingTodo=null; openDrawer(findNode('${p.id}'))">✕</button>
+          </div>`;
+        }
+        const overdue = t.due && !t.done && t.due < todayStr();
+        const badges = (t.prio?`<span class="tb tb-${t.prio}" title="prioridade ${prioName[t.prio]||""}">${prioMark[t.prio]||""} ${prioName[t.prio]||""}</span>`:"")
+          + (t.owner?`<span class="tb" title="responsável">@${esc(t.owner)}</span>`:"")
+          + (t.due?`<span class="tb ${overdue?"tb-over":""}" title="prazo${overdue?" — vencido":""}">📅 ${esc(t.due)}</span>`:"");
+        return `<div class="todo-item ${t.done?'done':''}">
           <span class="cb" onclick="toggleTodo('${p.id}',${i})">✓</span>
-          <span class="t">${esc(t.t)}</span>
+          <span class="t">${esc(t.t)}${badges}</span>
+          <span class="td-ed" title="prazo · dono · prioridade" onclick="editTodoMeta('${p.id}',${i})">✎</span>
           <span class="x" onclick="delTodo('${p.id}',${i})">✕</span>
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
       <div class="todo-add">
-        <input id="todoInput" placeholder="nova pendência…" onkeydown="if(event.key==='Enter')addTodo('${p.id}')">
+        <input id="todoInput" placeholder="nova pendência…  (dá pra usar !alta @dono 📅2026-07-10)" onkeydown="if(event.key==='Enter')addTodo('${p.id}')">
         <button class="btn sm" onclick="addTodo('${p.id}')">＋</button>
       </div>
       ${filesSectionHtml()}`;
@@ -1369,12 +1409,25 @@ async function delApp(id){
   closeDrawer(); save(); render();
 }
 
+let editingTodo=null;
 function toggleTodo(pjId,i){ const p=findNode(pjId).pj; p.todos[i].done=!p.todos[i].done; p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync(); }
 function delTodo(pjId,i){ const p=findNode(pjId).pj; p.todos.splice(i,1); p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync(); }
 function addTodo(pjId){
-  const inp=document.getElementById("todoInput"); const t=inp.value.trim(); if(!t) return;
-  const p=findNode(pjId).pj;
-  p.todos.push({t,done:false}); p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync();
+  const inp=document.getElementById("todoInput"); const raw=inp.value.trim(); if(!raw) return;
+  const p=findNode(pjId).pj; const m=splitTodoMeta(raw);
+  p.todos.push({t:m.text, done:false, prio:m.prio||undefined, owner:m.owner||undefined, due:m.due||undefined});
+  p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync();
+}
+function editTodoMeta(pjId,i){ editingTodo=pjId+":"+i; openDrawer(findNode(pjId)); const el=document.getElementById("tdOwner"); if(el) el.focus(); }
+function saveTodoMeta(pjId,i){
+  const p=findNode(pjId).pj, t=p.todos[i]; if(!t) return;
+  const prio=document.getElementById("tdPrio").value;
+  const owner=(document.getElementById("tdOwner").value||"").trim().replace(/^@/,"").replace(/\s+/g,"");
+  const due=(document.getElementById("tdDue").value||"").trim();
+  t.prio = prio||undefined;
+  t.owner = owner||undefined;
+  t.due = /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : undefined;
+  editingTodo=null; p._todoDirty=true; save(); openDrawer(findNode(pjId)); updateHud(); scheduleSync();
 }
 let syncTimer=null;
 function scheduleSync(){
@@ -2131,15 +2184,31 @@ ${runbookBlock(p)}
 *(gerado pelo painel Workspace — edite pelo painel, não aqui)*
 `;
 }
-/* serializa preservando o texto MULTILINHA de cada item (continuações já vêm com o \n
-   e a indentação embutidos em t.t), a seção (## …) e o espaçamento entre grupos (gap). */
+/* metadata inline das pendências: !alta|!media|!baixa · @dono · 📅YYYY-MM-DD no FIM da 1ª linha.
+   Fica no texto → viaja no pendencias.md (a IA lê/escreve igual) e o round-trip segue lossless. */
+const prioMark={alta:"🔴", media:"🟡", baixa:"🟢"}, prioName={alta:"alta", media:"média", baixa:"baixa"};
+const todayStr=()=>{ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+function splitTodoMeta(body){
+  let prio=null, owner=null, due=null, m, go=true;
+  while(go){ go=false;
+    if((m=body.match(/\s+(?:📅|due:)\s?(\d{4}-\d{2}-\d{2})$/))){ due=m[1]; body=body.slice(0,m.index); go=true; continue; }
+    if((m=body.match(/\s+@([\w.\-]+)$/))){ owner=m[1]; body=body.slice(0,m.index); go=true; continue; }
+    if((m=body.match(/\s+!(alta|m[ée]dia|baixa)$/i))){ prio=m[1].toLowerCase().replace("é","e"); body=body.slice(0,m.index); go=true; continue; }
+  }
+  return {text:body, prio, owner, due};
+}
+function todoMetaStr(t){ return (t.prio?` !${t.prio}`:"")+(t.owner?` @${t.owner}`:"")+(t.due?` 📅${t.due}`:""); }
+/* serializa preservando o texto MULTILINHA (continuações vêm com \n+indentação em t.t), a
+   seção (## …), o espaçamento (gap) e a metadata (só na 1ª linha, depois do texto). */
 const serTodos=p=>{
   let out=`# Pendências — ${p.name}\n\n`, lastSec=null, first=true;
   for(const t of (p.todos||[])){
     const sec=t.section||"";
     if(sec!==lastSec){ if(sec){ if(!first) out+="\n"; out+=`## ${sec}\n`; } lastSec=sec; }
     if(t.gap && !first) out+="\n";
-    out+=`- [${t.done?"x":" "}] ${t.t}\n`;
+    const lines=(t.t||"").split("\n"), head=lines.shift();
+    out+=`- [${t.done?"x":" "}] ${head}${todoMetaStr(t)}\n`;
+    if(lines.length) out+=lines.join("\n")+"\n";
     first=false;
   }
   return out;
@@ -2690,6 +2759,26 @@ function scheduleStatePush(){
   if(!stateSyncOn() || stateApplying) return;
   clearTimeout(statePushTimer); statePushTimer=setTimeout(pushState, 4000);
 }
+/* resumo legível do que o estado REMOTO muda em relação ao local (pro preview antes do pull) */
+function diffState(remoteDb){
+  const curP={}, remP={}, lines=[];
+  DB.companies.forEach(c=>c.projects.forEach(p=>curP[p.id]={p,co:c.name}));
+  (remoteDb.companies||[]).forEach(c=>c.projects.forEach(p=>remP[p.id]={p,co:c.name}));
+  const curCo=new Set(DB.companies.map(c=>c.id)), remCo=new Set((remoteDb.companies||[]).map(c=>c.id));
+  (remoteDb.companies||[]).forEach(c=>{ if(!curCo.has(c.id)) lines.push(`➕ empresa "${c.name}"`); });
+  DB.companies.forEach(c=>{ if(!remCo.has(c.id)) lines.push(`➖ empresa "${c.name}" (some)`); });
+  Object.keys(remP).forEach(id=>{ if(!curP[id]) lines.push(`➕ projeto "${remP[id].p.name}"`); });
+  Object.keys(curP).forEach(id=>{ if(!remP[id]) lines.push(`➖ projeto "${curP[id].p.name}" (some)`); });
+  Object.keys(remP).forEach(id=>{ if(!curP[id]) return;
+    const a=curP[id].p, b=remP[id].p, ch=[];
+    if((a.todos||[]).length!==(b.todos||[]).length) ch.push(`pendências ${(a.todos||[]).length}→${(b.todos||[]).length}`);
+    if((a.context||"")!==(b.context||"")) ch.push("memória mudou");
+    if((a.desc||"")!==(b.desc||"")) ch.push("descrição");
+    if((a.apps||[]).length!==(b.apps||[]).length) ch.push(`serviços ${(a.apps||[]).length}→${(b.apps||[]).length}`);
+    if(ch.length) lines.push(`✏ "${b.name}": ${ch.join(", ")}`);
+  });
+  return lines;
+}
 async function pullState({force=false}={}){
   if(!stateSyncOn() || statePushing) return false;
   const f=await ghGetFile(stateRepo(),STATE_PATH).catch(e=>{ stateBadge("☁ falha ao ler: "+(e.message||e), false); return null; });
@@ -2698,6 +2787,15 @@ async function pullState({force=false}={}){
   if(!payload || !payload.db || !Array.isArray(payload.db.companies)) return false;
   const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
   if(!force && !(payload.updatedAt>last)) return false;
+  // PREVIEW/DIFF: remoto mais novo E há edições locais não sincronizadas → mostra o que muda e confirma
+  if(!force && lastPushedDbStr!==null && JSON.stringify(sanitizeStateForSync())!==lastPushedDbStr){
+    const lines=diffState(payload.db);
+    const resumo = lines.length ? lines.slice(0,12).map(l=>"• "+l).join("\n")+(lines.length>12?`\n• +${lines.length-12} mudança(s)…`:"") : "(mudanças pequenas)";
+    const go = await uiConfirm(
+      `O remoto está mais novo (por ${String(payload.device||"?").slice(0,24)}) e você tem edições locais não sincronizadas.\n\nPuxar SUBSTITUI o local por:\n\n${resumo}\n\nPuxar mesmo assim? (edições locais não enviadas se perdem)`,
+      {danger:true, okLabel:"Puxar e substituir"});
+    if(!go){ stateBadge("☁ pull adiado — você tem edições locais (elas sobem sozinhas ao editar/salvar)", false); return false; }
+  }
   stateApplying=true;
   try{
     // preserva TUDO que é local (não vem do repo): token, repo, providers (com as chaves),
@@ -2742,7 +2840,7 @@ function renderWorkspaceState(){
       <span style="flex:1;min-width:0"><b>${esc(repo)}</b><br><span style="font-size:11.5px;color:var(--tx3)">sincroniza sozinha · sem apertar botão</span></span>
     </div>
     <div id="stateSyncStatus" style="font-size:12px; color:var(--tx3); margin-top:8px"></div>
-    <div style="margin-top:10px"><button class="btn sm" onclick="openWsModal()">🗂 Ver todas as workspaces</button></div>
+    <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap"><button class="btn sm" onclick="openWsModal()">🗂 Ver todas as workspaces</button><button class="btn sm" onclick="openHistory()">🕘 Histórico / voltar versão</button></div>
     <details style="margin-top:10px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Avançado</summary>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
         <button class="btn sm" onclick="disconnectWorkspace()">Desconectar</button>
@@ -3309,6 +3407,79 @@ async function renderActivityFeed(){
       rows.slice(0,12).map(r=>`<div style="font-size:12px;color:var(--tx2);padding:3px 0">${r.label}${r.count>1?` <span style="color:var(--tx3)">×${r.count}</span>`:""} <span style="color:var(--tx3)">· ${r.date?agoStr(r.date):""}</span></div>`).join(""):"";
   }catch(e){ host.innerHTML=""; }
 }
+/* ===== 🔎 busca global: empresas · projetos · pendências · serviços · memória ===== */
+function snippet(text,q){ const i=(text||"").toLowerCase().indexOf(q); if(i<0) return ""; return "…"+(text.slice(Math.max(0,i-24), i+46)).replace(/\s+/g," ").trim()+"…"; }
+function openSearch(){
+  document.getElementById("searchModal").classList.add("open");
+  const inp=document.getElementById("searchInput"); inp.value=""; document.getElementById("searchResults").innerHTML="";
+  setTimeout(()=>inp.focus(), 30);
+}
+function runSearch(){
+  const q=(document.getElementById("searchInput").value||"").trim().toLowerCase();
+  const box=document.getElementById("searchResults"); if(!box) return;
+  if(q.length<2){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">digite ao menos 2 letras…</div>`; return; }
+  const hit=s=>(s||"").toLowerCase().includes(q), res=[];
+  for(const c of DB.companies){
+    if(hit(c.name)||hit(c.desc)) res.push({id:c.id, icon:c.emoji||"🏢", title:c.name, sub:"empresa"+(c.desc?" · "+c.desc:"")});
+    for(const p of c.projects){
+      if(hit(p.name)||hit(p.desc)||hit(p.github)) res.push({id:p.id, icon:p.emoji||"🚀", title:p.name, sub:"projeto · "+c.name+(p.github?" · "+p.github:"")});
+      (p.todos||[]).forEach(t=>{ if(hit(t.t)||hit(t.owner)) res.push({id:p.id, icon:t.done?"✅":"⬜", title:(t.t||"").split("\n")[0].slice(0,90), sub:"pendência · "+p.name+(t.owner?" · @"+t.owner:"")+(t.due?" · 📅"+t.due:"")}); });
+      (p.apps||[]).forEach(a=>{ if(hit(a.name)||hit(a.role)) res.push({id:a.id, icon:"🔌", title:a.name, sub:"serviço · "+p.name}); });
+      if(hit(p.context)) res.push({id:p.id, icon:"🧠", title:"memória de "+p.name, sub:snippet(p.context,q)});
+    }
+  }
+  if(!res.length){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">nada pra "<b>${esc(q)}</b>"</div>`; return; }
+  box.innerHTML = res.slice(0,50).map(r=>`<div class="mini-item" onclick="searchGo('${r.id}')">
+      <span class="mi-emoji">${esc(r.icon)}</span>
+      <span style="flex:1;min-width:0"><b>${esc(r.title)}</b><br><span style="font-size:11px;color:var(--tx3)">${esc(r.sub)}</span></span>
+      <span class="arrow">→</span>
+    </div>`).join("") + (res.length>50?`<div class="dr-desc" style="color:var(--tx3);margin-top:6px">+${res.length-50} resultado(s)…</div>`:"");
+}
+function searchGo(id){ closeModals(); jumpTo(id); }
+document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey) && (e.key==="k"||e.key==="K")){ e.preventDefault(); openSearch(); } });
+
+/* ===== 🕘 snapshots + rollback: reusa o histórico git do state.json ===== */
+async function openHistory(){
+  document.getElementById("histModal").classList.add("open");
+  const box=document.getElementById("histBody");
+  if(!stateSyncOn()){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">conecte uma workspace (⚙ Contas) pra ver o histórico</div>`; return; }
+  box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">lendo histórico…</div>`;
+  try{
+    const commits=await ghGet(`/repos/${stateRepo()}/commits?path=${STATE_PATH}&per_page=25`);
+    if(!Array.isArray(commits)||!commits.length){ box.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">sem histórico ainda (edite algo pra gerar a 1ª versão)</div>`; return; }
+    box.innerHTML=commits.map((c,i)=>{
+      const d=(c.commit&&c.commit.author&&c.commit.author.date)?Date.parse(c.commit.author.date):null;
+      const who=(c.commit&&c.commit.author&&c.commit.author.name)||"";
+      const when=d?new Date(d).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+      return `<div class="mini-item" ${i===0?"":`onclick="restoreSnapshot('${c.sha}')" style="cursor:pointer"`}>
+        <span class="mi-emoji">${i===0?"🟢":"🕘"}</span>
+        <span style="flex:1;min-width:0"><b>${i===0?"atual":"versão de "+esc(agoStr(d)||when)}</b><br><span style="font-size:11px;color:var(--tx3)">${esc(who)} · ${esc(when)} · ${esc((c.sha||"").slice(0,7))}</span></span>
+        ${i===0?`<span style="font-size:11px;color:var(--ok)">✓ aqui</span>`:`<span class="arrow" title="voltar pra esta">↩</span>`}
+      </div>`;
+    }).join("");
+  }catch(e){ box.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha ao ler histórico: ${esc(e.message||e)}</div>`; }
+}
+async function restoreSnapshot(sha){
+  if(!(await uiConfirm("Voltar a workspace pra esta versão? O estado atual é substituído (e vira o novo topo do histórico — dá pra voltar de novo).",{danger:true, okLabel:"Voltar pra esta versão"}))) return;
+  try{
+    const j=await ghGet(`/repos/${stateRepo()}/contents/${STATE_PATH}?ref=${sha}`);
+    if(!j||!j.content) throw new Error("não consegui ler essa versão");
+    const payload=JSON.parse(b64d(j.content));
+    if(!payload||!payload.db||!Array.isArray(payload.db.companies)) throw new Error("versão inválida");
+    const local=(DB.settings||{}), keep={tok:local.githubToken, repo:local.stateRepo, prov:local.providers, mcp:local.mcpUrl, dock:local.dock};
+    DB=migrate(payload.db); DB.settings=DB.settings||{};
+    if(keep.tok)DB.settings.githubToken=keep.tok; if(keep.repo)DB.settings.stateRepo=keep.repo;
+    if(keep.prov!==undefined)DB.settings.providers=keep.prov; if(keep.mcp!==undefined)DB.settings.mcpUrl=keep.mcp; if(keep.dock!==undefined)DB.settings.dock=keep.dock;
+    // reescreve a brain (memoria/pendencias/projeto) pra bater com a versão restaurada
+    DB.companies.forEach(c=>{ c._coDirty=true; c.projects.forEach(p=>{ p._memDirty=true; p._todoDirty=true; }); });
+    lastPushedDbStr=null;                    // garante o push do estado restaurado
+    save(); render(); closeModals();
+    uiToast("Voltou pra versão "+sha.slice(0,7)+". Sincronizando…","ok");
+    await pushState();
+    if(typeof queueBrainPush==="function") queueBrainPush();
+  }catch(e){ uiToast("Restaurar: "+(e.message||e),"bad"); }
+}
+
 function openCockpit(){
   renderCockpit();
   document.getElementById("cockpitModal").classList.add("open");
