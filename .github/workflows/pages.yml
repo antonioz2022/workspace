@@ -1,7 +1,10 @@
-name: Deploy Pages
+# O Pages está em modo "Deploy from a branch": o build automático do GitHub ("pages build
+# and deployment") publica o site a cada push. Este workflow (modo GitHub Actions) era
+# redundante e falhava sempre no deploy-pages (fonte por branch != artifact de Actions),
+# deixando um X vermelho em todo deploy. Mantido SÓ como escape manual (workflow_dispatch):
+# se o build por branch um dia falhar, dá pra publicar por aqui à mão. Não roda em push.
+name: Deploy Pages (manual — fallback)
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
