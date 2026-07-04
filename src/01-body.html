@@ -149,11 +149,14 @@
     <input id="askInput" placeholder="pergunte qualquer coisa: quais projetos usam o Kommo? o que conecta X e Y?" style="flex:1" onkeydown="if(event.key==='Enter')askRun()">
     <button class="btn sm primary" onclick="askRun()">Perguntar</button>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
     <button class="btn sm" id="askReindexBtn" onclick="askReindex()">↻ Reindexar</button>
     <button class="btn sm" onclick="askSuggest()" title="descobre relações do grafo por proximidade semântica">💡 Sugerir relações</button>
     <span id="askStatus" style="font-size:11.5px"></span>
   </div>
+  <label style="font-size:11.5px;color:var(--tx3);display:inline-flex;align-items:center;gap:6px;margin-bottom:10px" title="lê README, CLAUDE.md, ARCHITECTURE e specs recentes dos repos e indexa junto — a busca passa a alcançar o detalhe técnico, não só o panorama">
+    <input type="checkbox" id="askIncludeCode" checked> incluir docs do código (README, specs, CLAUDE.md) — alcança o detalhe técnico
+  </label>
   <div id="askResults"></div>
   <div id="askAnswer"></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>

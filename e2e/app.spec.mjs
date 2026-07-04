@@ -697,6 +697,30 @@ test("índice semântico portátil: publica no repo e um aparelho novo puxa sem 
   expect(pulled, "aparelho novo carregou o índice do repo").toBeGreaterThan(0);
 });
 
+test("panorama + detalhe: indexa docs do código (README) e a busca alcança o detalhe técnico", async ({ page }) => {
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    if (url.endsWith("/contents/README.md")) return route.fulfill({ json: { content: Buffer.from("# Backend\nA autenticacao usa JWT com refresh token e rate limiting no gateway.").toString("base64") } });
+    return route.fulfill({ status: 404, json: {} });   // demais docs/specs ausentes
+  });
+  await page.evaluate(() => {
+    const vocab = ["jwt", "autenticacao", "token", "reserva", "hotel"];
+    window.setEmbedder(async (t) => t.map(x => { const low = x.toLowerCase(); const v = vocab.map(w => low.split(w).length - 1); const n = Math.hypot(...v) || 1; return v.map(y => y / n); }));
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock";
+    DB.companies = [{ id: "co1", name: "A", emoji: "🅰", x: 0, y: 0, projects: [{ id: "p1", name: "Backend", emoji: "🚀", x: 0, y: 100, github: "owner/repo", apps: [], todos: [], chats: [], context: "servico de reserva de hotel" }] }];
+    save();
+  });
+  await page.evaluate(async () => { await buildSemIndex(null, { includeCode: true }); });
+  // "autenticacao jwt" SÓ existe no README (não na memória) → o top tem que ser o chunk de código
+  const top = await page.evaluate(async () => (await semSearch("como funciona a autenticacao jwt", 5)).results[0]);
+  expect(top.scope, "achou o detalhe técnico no README").toContain("código");
+  expect(top.file).toContain("README");
+  expect(top.url).toContain("owner/repo");
+  // sem includeCode, o README não é indexado (só panorama)
+  const codeN = await page.evaluate(async () => { await buildSemIndex(null, { includeCode: false }); return (await semSearch("jwt", 10)).results.filter(x => x.scope.includes("código")).length; });
+  expect(codeN, "sem includeCode não puxa docs do código").toBe(0);
+});
+
 test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.local.js)", async ({ page }) => {
   const codes = await page.evaluate(async () => {
     const get = (u) => fetch(u).then((r) => r.status).catch(() => 0);

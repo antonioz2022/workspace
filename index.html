@@ -599,11 +599,14 @@
     <input id="askInput" placeholder="pergunte qualquer coisa: quais projetos usam o Kommo? o que conecta X e Y?" style="flex:1" onkeydown="if(event.key==='Enter')askRun()">
     <button class="btn sm primary" onclick="askRun()">Perguntar</button>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
     <button class="btn sm" id="askReindexBtn" onclick="askReindex()">↻ Reindexar</button>
     <button class="btn sm" onclick="askSuggest()" title="descobre relações do grafo por proximidade semântica">💡 Sugerir relações</button>
     <span id="askStatus" style="font-size:11.5px"></span>
   </div>
+  <label style="font-size:11.5px;color:var(--tx3);display:inline-flex;align-items:center;gap:6px;margin-bottom:10px" title="lê README, CLAUDE.md, ARCHITECTURE e specs recentes dos repos e indexa junto — a busca passa a alcançar o detalhe técnico, não só o panorama">
+    <input type="checkbox" id="askIncludeCode" checked> incluir docs do código (README, specs, CLAUDE.md) — alcança o detalhe técnico
+  </label>
   <div id="askResults"></div>
   <div id="askAnswer"></div>
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
@@ -4282,8 +4285,55 @@ function brainCorpus(){
   if(typeof genGrafoMd==="function" && (DB.links||[]).length) add(genGrafoMd(), {scope:"grafo de relações", file:"GRAFO.md"});
   return items;
 }
-async function buildSemIndex(onProgress){
-  const items=brainCorpus();
+/* ===== panorama + DETALHE PROFUNDO: indexa os docs-chave dos repos de código =====
+   A brain guarda o panorama e aponta pro código; aqui a busca ALCANÇA o detalhe técnico
+   documentado (README, CLAUDE/AGENTS, ARCHITECTURE, specs recentes, docs/) — sem copiar o
+   código pra brain: só lê via API, embeda e cacheia. Best-effort e limitado por repo. */
+const CODE_MAX_CHUNKS_PER_REPO=30, CODE_DOC_CHARS=8000;
+async function fetchRepoText(repo, path){
+  const enc=path.split("/").map(encodeURIComponent).join("/");
+  const j=await ghGet(`/repos/${repo}/contents/${enc}`).catch(()=>null);
+  if(j && j.content && !Array.isArray(j)){ try{ return b64d(j.content).slice(0, CODE_DOC_CHARS); }catch(e){ return null; } }
+  return null;
+}
+async function repoDocList(repo){
+  const paths=["README.md","CLAUDE.md","AGENTS.md","ARCHITECTURE.md",".workspace/brain.md"];
+  const specs=await ghGet(`/repos/${repo}/contents/specs`).catch(()=>null);
+  if(Array.isArray(specs)){
+    const dirs=specs.filter(e=>e.type==="dir"&&/^\d{3}-/.test(e.name)).map(e=>e.name).sort().slice(-3);
+    for(const d of dirs){ paths.push(`specs/${d}/spec.md`); paths.push(`specs/${d}/plan.md`); }
+  }
+  const docs=await ghGet(`/repos/${repo}/contents/docs`).catch(()=>null);
+  if(Array.isArray(docs)) for(const e of docs.filter(e=>e.type==="file"&&/\.md$/i.test(e.name)).slice(0,5)) paths.push(`docs/${e.name}`);
+  return paths;
+}
+async function codeCorpus(onProgress){
+  if(!(DB.settings||{}).githubToken) return [];
+  const projs=[];
+  for(const c of DB.companies) for(const p of (c.projects||[])) if(p.github && !p.noRepo) projs.push(p);
+  const items=[]; let done=0;
+  for(const p of projs){
+    const repo=p.github, paths=await repoDocList(repo).catch(()=>[]);
+    let count=0;
+    for(const path of paths){
+      if(count>=CODE_MAX_CHUNKS_PER_REPO) break;
+      const text=await fetchRepoText(repo, path); if(!text) continue;
+      const url=`https://github.com/${repo}/blob/HEAD/${path}`;
+      for(const ch of chunkText(text)){ if(count>=CODE_MAX_CHUNKS_PER_REPO) break;
+        items.push({text:`[código · ${p.name} · ${path}] ${ch}`, scope:`código · ${p.name}`, file:path, url, goId:p.id, raw:ch}); count++; }
+    }
+    done++; if(onProgress) onProgress(done, projs.length, "code");
+  }
+  return items;
+}
+async function buildSemIndex(onProgress, opts){
+  opts=opts||{};
+  let items=brainCorpus();
+  if(opts.includeCode){
+    if(onProgress) onProgress(0, 0, "lendo docs do código…");
+    const code=await codeCorpus().catch(()=>[]);
+    items=items.concat(code);
+  }
   if(!items.length){ semIndex={model:EMB_MODEL, builtAt:Date.now(), items:[]}; await idbSet(SEMIDX_KEY, semIndex); return semIndex; }
   const vecs=[]; const B=12;
   for(let i=0;i<items.length;i+=B){
@@ -4293,7 +4343,7 @@ async function buildSemIndex(onProgress){
     if(onProgress) onProgress(Math.min(i+B, items.length), items.length);
   }
   semIndex={ model:EMB_MODEL, builtAt:Date.now(), repo:(typeof stateRepo==="function"?stateRepo():"")||"",
-    items:items.map((it,i)=>({scope:it.scope, file:it.file, goId:it.goId||null, raw:it.raw, vec:vecs[i]})) };
+    items:items.map((it,i)=>({scope:it.scope, file:it.file, goId:it.goId||null, url:it.url||null, raw:it.raw, vec:vecs[i]})) };
   await idbSet(SEMIDX_KEY, semIndex);
   return semIndex;
 }
@@ -4321,7 +4371,7 @@ async function semSearch(query, k){
   const idx=await loadSemIndex();
   if(!idx || !idx.items || !idx.items.length) return {needIndex:true, results:[]};
   const [qv]=await embed([query]);
-  const scored=idx.items.map(it=>({scope:it.scope, file:it.file, goId:it.goId, raw:it.raw, score:cosine(qv, it.vec)}));
+  const scored=idx.items.map(it=>({scope:it.scope, file:it.file, goId:it.goId, url:it.url||null, raw:it.raw, score:cosine(qv, it.vec)}));
   scored.sort((a,b)=>b.score-a.score);
   return {results:scored.slice(0, k||8)};
 }
@@ -4398,8 +4448,12 @@ async function askReindex(){
   const btn=document.getElementById("askReindexBtn"), st=document.getElementById("askStatus");
   const set=s=>{ if(btn) btn.textContent=s; };
   set("⏳ preparando…");
+  const includeCode=!!((document.getElementById("askIncludeCode")||{}).checked);
   try{
-    await buildSemIndex((done,total)=>{ if(st) st.innerHTML=`<span style="color:var(--tx3)">indexando… ${done}/${total} trechos${done<total?" (baixando o modelo na 1ª vez pode demorar)":""}</span>`; });
+    await buildSemIndex((done,total,phase)=>{ if(!st) return;
+      st.innerHTML = phase==="lendo docs do código…" ? `<span style="color:var(--tx3)">lendo docs do código dos repos…</span>`
+        : `<span style="color:var(--tx3)">indexando… ${done}/${total} trechos${done<total?" (baixando o modelo na 1ª vez pode demorar)":""}</span>`;
+    }, {includeCode});
     const pub=await publishSemIndex();   // versiona no repo → portátil pra outros aparelhos
     askIndexStatus(); uiToast(pub?"Índice pronto e publicado no repo (portátil entre aparelhos).":"Índice semântico pronto (local).","ok");
   }catch(e){ if(st) st.innerHTML=`<span style="color:var(--warn)">falha ao indexar: ${esc(e.message||String(e))}</span>`; }
@@ -4416,12 +4470,14 @@ async function askRun(){
   if(r.needIndex){ box.innerHTML=`<div class="empty-mini"><span class="ico">🧠</span>Ainda não há índice. Clique <b>Reindexar</b> acima pra ligar a busca semântica.</div>`; return; }
   const hits=(r.results||[]).filter(x=>x.score>0.15);
   if(!hits.length){ box.innerHTML=`<div class="empty-mini"><span class="ico">🫥</span>Nada relevante achado. Talvez o índice esteja velho — Reindexar, ou reformule.</div>`; return; }
-  box.innerHTML=`<div class="agenda-h">🔎 Trechos mais relevantes</div>`+hits.map(h=>`
-    <div class="mini-item" ${h.goId?`onclick="closeModals();jumpTo('${h.goId}')" style="cursor:pointer"`:`style="cursor:default"`}>
+  box.innerHTML=`<div class="agenda-h">🔎 Trechos mais relevantes</div>`+hits.map(h=>{
+    const fileLbl = h.url ? `<a href="${esc(h.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--ac2)">${esc(h.file)} ↗</a>` : esc(h.file);
+    return `<div class="mini-item" ${h.goId?`onclick="closeModals();jumpTo('${h.goId}')" style="cursor:pointer"`:`style="cursor:default"`}>
       <span class="mi-emoji" title="proximidade">${Math.round(h.score*100)}%</span>
-      <span style="flex:1;min-width:0"><b>${esc(h.scope)}</b> <span style="color:var(--tx3);font-size:11px">· ${esc(h.file)}</span><br><span style="font-size:11.5px;color:var(--tx2)">${esc((h.raw||"").replace(/\s+/g," ").slice(0,150))}…</span></span>
+      <span style="flex:1;min-width:0"><b>${esc(h.scope)}</b> <span style="color:var(--tx3);font-size:11px">· ${fileLbl}</span><br><span style="font-size:11.5px;color:var(--tx2)">${esc((h.raw||"").replace(/\s+/g," ").slice(0,150))}…</span></span>
       ${h.goId?`<span class="arrow">→</span>`:""}
-    </div>`).join("");
+    </div>`;
+  }).join("");
   // "responder com IA" (RAG) se houver provider configurado
   if(typeof PROVS==="function" && PROVS().length){
     ans.innerHTML=`<button class="btn sm primary" id="askAnsBtn" onclick="askAnswer()">💬 Responder com IA (usa os trechos acima)</button>`;
