@@ -628,6 +628,19 @@
   <div class="modal-foot"><button class="btn" onclick="closeModals()">Fechar</button></div>
 </div></div>
 
+<div class="overlay" id="prModal"><div class="modal" style="width:min(560px,94vw)">
+  <h3>🔀 Novo pull request</h3>
+  <div id="prRepoLine" style="font-size:12px; color:var(--tx3); margin:-6px 0 10px"></div>
+  <div class="f-row">
+    <div class="f"><label>De (head)</label><select id="prHead"></select></div>
+    <div class="f"><label>Para (base)</label><select id="prBase"></select></div>
+  </div>
+  <div class="f"><label>Título</label><input id="prTitle" placeholder="o que este PR faz"></div>
+  <div class="f"><label>Descrição (opcional)</label><textarea id="prBody" rows="3" placeholder="contexto, mudanças…"></textarea></div>
+  <div id="prStatus" style="font-size:11.5px; color:var(--tx3); min-height:15px"></div>
+  <div class="modal-foot"><button class="btn" onclick="closeModals()">Cancelar</button><button class="btn primary" onclick="createRepoPR()">Criar PR</button></div>
+</div></div>
+
 <div class="overlay" id="cockpitModal"><div class="modal" style="width:min(780px,94vw)">
   <h3>🎛 Cockpit de desenvolvimento</h3>
   <p style="color:var(--tx2); font-size:12px; margin:-8px 0 12px">
@@ -2381,7 +2394,7 @@ async function ghGet(path){
   return r.json();
 }
 async function ghRepoTelemetry(owner,repo){
-  const out={git:null, specs:null, source:"github", repo:null, commits:[], issues:[], prs:[], repoError:false};
+  const out={git:null, specs:null, source:"github", repo:null, commits:[], issues:[], prs:[], releases:[], milestones:[], repoError:false};
   const info=await ghGet(`/repos/${owner}/${repo}`);
   if(!info){ out.repoError=true; return out; }   // 404: repo não existe ou o token não o inclui
   const branch=info.default_branch||null;
@@ -2409,6 +2422,10 @@ async function ghRepoTelemetry(owner,repo){
     const dirs=specs.filter(e=>e.type==="dir" && /^\d{3}-/.test(e.name)).map(e=>e.name).sort();
     if(dirs.length) out.specs={count:dirs.length, last:dirs[dirs.length-1]};
   }
+  const rels=await ghGet(`/repos/${owner}/${repo}/releases?per_page=5`).catch(()=>null);
+  if(Array.isArray(rels)) out.releases=rels.filter(r=>!r.draft).map(r=>({tag:r.tag_name||"", name:r.name||r.tag_name||"", ts:r.published_at?Date.parse(r.published_at):null, url:r.html_url, pre:!!r.prerelease}));
+  const miles=await ghGet(`/repos/${owner}/${repo}/milestones?state=open&per_page=10&sort=due_on&direction=asc`).catch(()=>null);
+  if(Array.isArray(miles)) out.milestones=miles.map(mi=>({title:mi.title||"", open:mi.open_issues||0, closed:mi.closed_issues||0, due:mi.due_on?mi.due_on.slice(0,10):null, url:mi.html_url}));
   return out;
 }
 /* repos que o token enxerga — pro autocomplete e o auto-match de projeto novo */
@@ -2496,6 +2513,8 @@ function teleInner(c,p,state){
          if(R.license) chips.push(`<span class="chip">${esc(R.license)}</span>`); }
   if(s) chips.push(`<span class="chip" title="pasta specs/">${s.count} features · atual ${esc(s.last||"—")}</span>`);
   chips.push(`<span class="chip">${openN}/${totN} pendências</span>`);
+  if(isGh && t.releases && t.releases[0]) chips.push(`<span class="chip" title="release mais recente">🏷 ${esc(t.releases[0].tag)}</span>`);
+  if(isGh && t.milestones && t.milestones.length) chips.push(`<span class="chip" title="milestones abertos">🎯 ${t.milestones.length} milestone(s)</span>`);
   const header = R ? `<div style="display:flex;align-items:center;gap:8px;margin:-2px 0 6px;flex-wrap:wrap">
       <a href="${esc(R.url)}" target="_blank" rel="noopener" style="color:var(--ac2);font-weight:650;font-size:13px;text-decoration:none">🐙 ${esc(p.github)}</a>
       <span class="chip">${R.private?"🔒 privado":"🌐 público"}</span>
@@ -2512,6 +2531,11 @@ function teleInner(c,p,state){
   const commitsList = (isGh && t.commits && t.commits.length>1) ? `<details style="margin-top:8px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Commits recentes (${t.commits.length})</summary><div class="mini-list" style="margin-top:6px">${t.commits.map(cm=>miniLink("⎇",esc(cm.msg),cm.url)).join("")}</div></details>` : "";
   const issuesList = (isGh && t.issues && t.issues.length) ? `<details style="margin-top:6px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Issues abertas (${t.issues.length}${R&&R.openIssues>t.issues.length?"+":""})</summary><div class="mini-list" style="margin-top:6px">${t.issues.map(it=>miniLink("🐛","#"+it.num+" "+esc(it.title),it.url)).join("")}</div></details>` : "";
   const prsList = (isGh && t.prs && t.prs.length) ? `<details style="margin-top:6px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Pull requests abertos (${t.prs.length})</summary><div class="mini-list" style="margin-top:6px">${t.prs.map(it=>miniLink("🔀","#"+it.num+" "+esc(it.title),it.url)).join("")}</div></details>` : "";
+  const milesList = (isGh && t.milestones && t.milestones.length) ? `<details style="margin-top:6px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Milestones (${t.milestones.length})</summary><div class="mini-list" style="margin-top:6px">${t.milestones.map(mi=>{
+      const tot=mi.open+mi.closed, pct=tot?Math.round(mi.closed/tot*100):0, over=mi.due && mi.due<todayStr();
+      return `<a class="mini-item" href="${esc(mi.url)}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--tx)"><span class="mi-emoji">🎯</span><span style="flex:1;min-width:0"><b style="font-size:12.5px">${esc(mi.title)}</b> <span style="font-size:10.5px;color:var(--tx3)">${mi.closed}/${tot} (${pct}%)</span>${mi.due?` <span class="tb ${over?"tb-over":""}">📅 ${esc(mi.due)}</span>`:""}</span><span class="arrow">↗</span></a>`;
+    }).join("")}</div></details>` : "";
+  const relsList = (isGh && t.releases && t.releases.length) ? `<details style="margin-top:6px"><summary style="font-size:12px;color:var(--tx3);cursor:pointer">Releases (${t.releases.length})</summary><div class="mini-list" style="margin-top:6px">${t.releases.map(rl=>miniLink("🏷",esc(rl.tag)+(rl.name&&rl.name!==rl.tag?" · "+esc(rl.name):"")+(rl.pre?" (pré)":"")+(rl.ts?" · "+esc(agoStr(rl.ts)):""),rl.url)).join("")}</div></details>` : "";
   return `${header}${commitLine}<div class="chips" style="margin-bottom:8px">${chips.join("")}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       ${links}
@@ -2519,8 +2543,58 @@ function teleInner(c,p,state){
       <button class="btn sm primary" id="copyCtxBtn" onclick="copyProjectContext('${p.id}')" title="Copia commits + pendências + memória atual pra colar no Claude Code / Codex">📋 Contexto p/ IA</button>
       <button class="btn sm" id="repoBrainBtn" onclick="syncRepoBrain('${p.id}')" title="Cria/sincroniza .workspace/brain.md dentro do repositório, versionado no git">🧩 Brain no repo</button>
       ${R?`<button class="btn sm" onclick="createRepoIssue('${p.id}')" title="Abrir uma issue neste repositório">＋ Nova issue</button>`:""}
+      ${R?`<button class="btn sm" onclick="openPrModal('${p.id}')" title="Abrir um pull request neste repositório">🔀 Novo PR</button>`:""}
       ${isGh?"":`<button class="btn sm ghost" onclick="disconnectProjDir('${p.id}')" title="esquecer a pasta">⊘</button>`}
-    </div>${commitsList}${issuesList}${prsList}${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
+    </div>${commitsList}${milesList}${relsList}${issuesList}${prsList}${t.at?`<div style="font-size:11px;color:var(--tx3);margin-top:6px">lido ${agoStr(t.at)}</div>`:""}`;
+}
+/* abre um pull request: escolhe head/base (branches do repo) + título + descrição, depois POST /pulls */
+let prPid=null;
+async function openPrModal(pid){
+  const f=findNode(pid); if(!f||f.type!=="pj"||!f.pj.github) return;
+  if(!(DB.settings||{}).githubToken){ uiToast("Entre com o GitHub (⚙ Contas) pra abrir PRs.","warn"); return; }
+  prPid=pid; const repo=f.pj.github;
+  document.getElementById("prModal").classList.add("open");
+  document.getElementById("prRepoLine").textContent="em "+repo;
+  document.getElementById("prTitle").value=""; document.getElementById("prBody").value="";
+  const st=document.getElementById("prStatus"); st.textContent="carregando branches…"; st.style.color="var(--tx3)";
+  const headSel=document.getElementById("prHead"), baseSel=document.getElementById("prBase");
+  headSel.innerHTML=baseSel.innerHTML="";
+  try{
+    const def=(teleCache[pid]&&teleCache[pid].repo&&teleCache[pid].repo.defBranch)||"main";
+    const cur=(teleCache[pid]&&teleCache[pid].git&&teleCache[pid].git.branch)||"";
+    const brs=await ghGet(`/repos/${repo}/branches?per_page=100`);
+    const names=(Array.isArray(brs)?brs:[]).map(b=>b.name);
+    if(!names.length){ st.textContent="não achei branches (o token tem acesso de escrita?)"; st.style.color="var(--warn)"; return; }
+    const headDefault = (cur && cur!==def && names.includes(cur)) ? cur : (names.find(n=>n!==def)||names[0]);
+    const opt=(n,sel)=>`<option value="${esc(n)}"${sel?" selected":""}>${esc(n)}</option>`;
+    headSel.innerHTML=names.map(n=>opt(n, n===headDefault)).join("");
+    baseSel.innerHTML=names.map(n=>opt(n, n===def)).join("");
+    st.textContent = names.length<2 ? "só há 1 branch — crie/empurre outra pra abrir um PR" : "";
+    if(names.length<2) st.style.color="var(--warn)";
+  }catch(e){ st.textContent="falha ao ler branches: "+(e.message||e); st.style.color="var(--warn)"; }
+}
+async function createRepoPR(){
+  const f=findNode(prPid); if(!f||f.type!=="pj") return;
+  const repo=f.pj.github;
+  const head=document.getElementById("prHead").value, base=document.getElementById("prBase").value;
+  const title=(document.getElementById("prTitle").value||"").trim(), body=document.getElementById("prBody").value||"";
+  const st=document.getElementById("prStatus");
+  if(!title){ st.textContent="dê um título ao PR"; st.style.color="var(--warn)"; return; }
+  if(!head||!base||head===base){ st.textContent="head e base precisam ser branches diferentes"; st.style.color="var(--warn)"; return; }
+  st.textContent="criando…"; st.style.color="var(--tx3)";
+  try{
+    const r=await fetch(`https://api.github.com/repos/${repo}/pulls`,{method:"POST",
+      headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
+      body:JSON.stringify({title, head, base, body})});
+    if(!r.ok){ const j=await r.json().catch(()=>({}));
+      const msg=(j.errors&&j.errors[0]&&j.errors[0].message)||j.message||("HTTP "+r.status);
+      throw new Error(/No commits between/i.test(msg)?`não há commits em "${head}" à frente de "${base}"`:((r.status===403)?"o token não pode abrir PR nesse repo (precisa de escrita)":msg)); }
+    const j=await r.json();
+    closeModals();
+    uiToast("✓ PR #"+j.number+" criado em "+repo,"ok");
+    delete teleCache[prPid];
+    try{ const t=await getTelemetry(f.pj,{promptLocal:false}); paintTele(prPid, t?"ready":"none"); }catch(e){}
+  }catch(e){ st.textContent="Criar PR: "+(e.message||e); st.style.color="var(--warn)"; }
 }
 /* abre uma issue no repo do projeto (ação do usuário: título + descrição + confirmar) */
 async function createRepoIssue(pid){
