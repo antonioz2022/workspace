@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Córtex — centro de comando</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20120%20120'%3E%3Crect%20width='120'%20height='120'%20rx='26'%20fill='%230B0A12'/%3E%3Cg%20fill='none'%20stroke='%238B5CF6'%20stroke-width='6'%3E%3Cpath%20d='M34%2029%2060%2060M20%2060%2060%2060M34%2091%2060%2060M77%2096%2060%2060'/%3E%3C/g%3E%3Cpath%20d='M77%2024%2060%2060'%20fill='none'%20stroke='%23F5A524'%20stroke-width='6'/%3E%3Cg%20fill='%238B5CF6'%3E%3Ccircle%20cx='34'%20cy='29'%20r='8'/%3E%3Ccircle%20cx='20'%20cy='60'%20r='8'/%3E%3Ccircle%20cx='34'%20cy='91'%20r='8'/%3E%3Ccircle%20cx='77'%20cy='96'%20r='8'/%3E%3C/g%3E%3Ccircle%20cx='77'%20cy='24'%20r='8.5'%20fill='%23F5A524'/%3E%3Ccircle%20cx='60'%20cy='60'%20r='12'%20fill='%23B69CFF'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0B0A12">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -3870,6 +3873,10 @@ if(!localStorage.getItem(LS_KEY+"-cam")) fitView();
 ensureBrain();
 if(stateSyncOn()) setTimeout(()=>pullState().catch(()=>{}), 600);
 { const d=patDays(); const b=document.getElementById("contasBtn"); if(b && d!==null && d<10) b.textContent="⚙ Contas ⚠"; }
+// PWA: registra o service worker (só quando servido por http/https; abrir de file:// segue funcionando)
+if("serviceWorker" in navigator && /^https?:$/.test(location.protocol)){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
 </script>
 </body>
 </html>

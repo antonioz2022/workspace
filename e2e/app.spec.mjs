@@ -6,7 +6,10 @@ import { test, expect } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
-  page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text()); });
+  // falha de REDE (fonte externa, offline etc) não é bug do app; erro de código é
+  page.on("console", (m) => {
+    if (m.type() === "error" && !/Failed to load resource|net::ERR_/.test(m.text())) errors.push("console: " + m.text());
+  });
   page.errors = errors;
   await page.goto("/");
   await expect(page.locator(".hud h1")).toHaveText("Córtex");
@@ -166,4 +169,59 @@ test("repo do projeto: validação ao vivo com API mockada + sem repositório", 
   await expect(page.locator("#pjGithub")).toBeDisabled();
   await expect(page.locator("#pjGithub")).toHaveValue("");
   await expect(page.locator("#pjRepoStatus")).toContainText("sem repositório");
+});
+
+test("PWA: manifest presente, service worker ativo e app abre OFFLINE", async ({ page, context }) => {
+  await expect(page.locator('link[rel="manifest"]')).toHaveCount(1);
+  await expect(page.locator('meta[name="theme-color"]')).toHaveCount(1);
+  // espera o SW registrar, ativar e pré-cachear o shell
+  await page.waitForFunction(async () => {
+    const reg = await navigator.serviceWorker.ready.catch(() => null);
+    return !!(reg && reg.active);
+  }, null, { timeout: 10_000 });
+  await page.waitForFunction(async () => {
+    const keys = await caches.keys();
+    if (!keys.length) return false;
+    const c = await caches.open(keys[0]);
+    return !!(await c.match("./index.html")) || !!(await c.match("index.html")) || !!(await c.match("./"));
+  }, null, { timeout: 10_000 });
+  // derruba a rede e recarrega: o shell tem que vir do cache
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.locator(".hud h1")).toHaveText("Córtex");
+  await expect(page.locator("#dock")).toBeVisible();
+  await context.setOffline(false);
+});
+
+test("membros: fluxo de convite completo com API mockada", async ({ page }) => {
+  const REPO = "antonioz2022/ws-teste";
+  let invited = false;
+  // GitHub API mockada de ponta a ponta; o worker do MCP/vigia responde 401 (a UI degrada com elegância)
+  await page.route("https://workspace-mcp.**", (r) => r.fulfill({ status: 401, json: {} }));
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url(), method = route.request().method();
+    if (url.endsWith("/user")) return route.fulfill({ json: { login: "antonioz2022" } });
+    if (url.endsWith(`/repos/${REPO}`)) return route.fulfill({ json: { full_name: REPO, permissions: { admin: true, push: true } } });
+    if (url.includes("/collaborators?")) return route.fulfill({ json: [{ login: "antonioz2022", permissions: { admin: true } }] });
+    if (method === "PUT" && url.includes("/collaborators/fulano")) { invited = true; return route.fulfill({ status: 201, json: { id: 9 } }); }
+    if (url.endsWith("/invitations")) return route.fulfill({ json: invited ? [{ id: 9, invitee: { login: "fulano" } }] : [] });
+    if (url.includes("/contents/state.json")) return route.fulfill({ status: 404, json: { message: "Not Found" } });
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {};
+    DB.settings.githubToken = "ghp_mock";
+    DB.settings.stateRepo = "antonioz2022/ws-teste";
+    save();
+  });
+  await page.getByRole("button", { name: "⚙ Contas" }).click();
+  await page.locator('.acc-tab:has-text("👥 Membros")').click();
+  await expect(page.locator("#memberSelf")).toContainText("você: @antonioz2022 (admin)");
+  await expect(page.locator("#membersList")).toContainText("@antonioz2022");
+
+  await page.fill("#memberUser", "fulano");
+  await page.getByRole("button", { name: "Convidar" }).click();
+  await expect(page.locator(".ui-toast")).toContainText("Convite enviado pra @fulano");
+  await expect(page.locator("#membersList")).toContainText("convite pendente");
+  await expect(page.locator("#membersList")).toContainText("@fulano");
 });
