@@ -449,6 +449,7 @@
     <button class="acc-tab on" data-tab="conta" onclick="switchAccTab('conta')">Conta</button>
     <button class="acc-tab" data-tab="membros" onclick="switchAccTab('membros')">👥 Membros</button>
     <button class="acc-tab" data-tab="ias" onclick="switchAccTab('ias')">🤖 IAs</button>
+    <button class="acc-tab" data-tab="chat" onclick="switchAccTab('chat')">💬 Chat</button>
     <button class="acc-tab" data-tab="vigia" onclick="switchAccTab('vigia')">🛰 Vigia</button>
     <button class="acc-tab" data-tab="avancado" onclick="switchAccTab('avancado')">Avançado</button>
   </div>
@@ -468,36 +469,40 @@
   </div>
 
   <div class="tabpane" id="tab-avancado">
-    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px"><b>Token manual</b> (alternativa ao login — ex.: fine-grained restrito com <b>Contents: read/write</b>, ou classic <code>repo</code>):</p>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px"><b>Token manual do GitHub</b> (alternativa ao login — ex.: fine-grained com <b>Contents: read/write</b>, ou classic <code>repo</code>):</p>
     <input id="ghTokenInput" type="password" placeholder="github_pat_… ou ghp_…" oninput="setGithubToken(this.value)" style="width:100%">
-    <div style="border-top:1px solid var(--line); padding-top:14px; margin-top:16px">
-      <h3 style="font-size:14px; margin:0 0 4px">Contas de IA por API key (legado — chats no painel)</h3>
-      <p style="color:var(--tx2); font-size:11.5px; margin:0 0 10px">Só é preciso se um dia usar chats embutidos por API. As chaves ficam <b>somente neste navegador</b>.</p>
-      <div id="provList"></div>
-      <div style="display:flex; gap:8px; margin:12px 0 4px">
-        <button class="btn sm" onclick="openProvForm()">＋ Nova conta</button>
-        <button class="btn sm" onclick="openProvForm('anthropic')">+ Claude</button>
-        <button class="btn sm" onclick="openProvForm('groq')">+ Groq</button>
+  </div>
+
+  <div class="tabpane" id="tab-chat">
+    <h3 style="font-size:15px; margin:0 0 3px">💬 Chat com modelos (traga uma IA pro Córtex)</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 12px">
+      Cole a chave de qualquer modelo — <b>grátis, barato ou local</b> — e converse com ele em qualquer projeto (botão 💬 no card do projeto). A IA já nasce sabendo a memória do projeto.
+      <span style="color:var(--tx3)"> A chave fica <b>só neste navegador</b>. É o inverso da aba 🤖 IAs (que leva o Córtex PRA sua IA).</span>
+    </p>
+    <div id="presetGrid"></div>
+    <div id="provList" style="margin-top:14px"></div>
+    <div style="margin:10px 0 4px">
+      <button class="btn sm" onclick="openProvForm()">＋ Conta manual (qualquer OpenAI-compatível)</button>
+    </div>
+    <div id="provForm" style="display:none; border-top:1px solid var(--line); padding-top:14px; margin-top:10px">
+      <div class="f-row">
+        <div class="f"><label>Nome da conta</label><input id="pvName"></div>
+        <div class="f" style="flex:0 0 170px"><label>Tipo</label>
+          <select id="pvKind" onchange="pvKindChanged()">
+            <option value="openai">OpenAI-compatível</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+          </select>
+        </div>
       </div>
-      <div id="provForm" style="display:none; border-top:1px solid var(--line); padding-top:14px; margin-top:10px">
-        <div class="f-row">
-          <div class="f"><label>Nome da conta (ex.: Claude — pessoal)</label><input id="pvName"></div>
-          <div class="f" style="flex:0 0 170px"><label>Tipo</label>
-            <select id="pvKind" onchange="pvKindChanged()">
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI-compatível</option>
-            </select>
-          </div>
-        </div>
-        <div class="f" id="pvBaseWrap" style="display:none"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
-        <div class="f"><label>API Key</label><input id="pvKey" type="password" placeholder="sk-..."></div>
-        <div class="f"><label>Modelos (separados por vírgula — o 1º é o padrão)</label><input id="pvModels"></div>
-        <div class="modal-foot" style="margin-top:6px">
-          <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
-          <button class="btn primary" onclick="saveProv()">Salvar conta</button>
-        </div>
+      <div class="f" id="pvBaseWrap"><label>Base URL (ex.: https://api.groq.com/openai/v1)</label><input id="pvBase"></div>
+      <div class="f"><label>API Key <span style="color:var(--tx3)">(deixe qualquer coisa p/ Ollama/local)</span></label><input id="pvKey" type="password" placeholder="cole a chave"></div>
+      <div class="f"><label>Modelos (vírgula — o 1º é o padrão)</label><input id="pvModels"></div>
+      <div class="modal-foot" style="margin-top:6px">
+        <button class="btn" onclick="document.getElementById('provForm').style.display='none'">Cancelar</button>
+        <button class="btn primary" onclick="saveProv()">Salvar conta</button>
       </div>
     </div>
+    <p style="color:var(--tx3); font-size:11px; margin-top:14px">ⓘ O chat roda direto do navegador. Funciona com provedores CORS-friendly (Groq · Gemini · OpenRouter · DeepSeek · Anthropic · Ollama local). <b>OpenAI (api.openai.com) bloqueia chamada de navegador</b> — se der erro de CORS, use um dos grátis/locais.</p>
   </div>
 
   <div class="tabpane" id="tab-ias">
@@ -997,6 +1002,10 @@ function openDrawer(f){
       <textarea id="pjMemory" style="width:100%; min-height:90px; background:rgba(0,0,0,.32); border:1px solid var(--line); border-radius:11px; color:var(--tx); padding:10px 13px; font-size:13px; font-family:'JetBrains Mono',monospace; resize:vertical">${esc(p.context||"")}</textarea>
       <div id="memBar" style="margin-top:8px"><button class="btn sm" onclick="saveMemory('${p.id}')">💾 Salvar memória</button></div>
       ${briefSectionHtml(p.id)}
+      <div class="dr-sec">💬 Chat com IA</div>
+      <div style="font-size:12px; color:var(--tx3); margin:-4px 0 8px">Converse com qualquer modelo (grátis, barato ou local) — ela já conhece a memória, os serviços e as pendências deste projeto.</div>
+      ${(p.chats||[]).length ? `<div class="mini-list">`+p.chats.map(ch=>`<div class="mini-item" onclick="openChat('${p.id}','${ch.id}')"><span class="mi-emoji">💬</span>${esc(ch.title||"novo chat")}<span class="arrow">→</span></div>`).join("")+`</div>` : ""}
+      <div style="margin-top:${(p.chats||[]).length?"8px":"0"}"><button class="btn sm primary" onclick="newChat('${p.id}')">＋ Novo chat</button></div>
       <div class="dr-sec">Serviços</div>
       <div class="mini-list">
         ${p.apps.map(a=>`
@@ -1286,11 +1295,39 @@ const provLabel = id => { const p=getProv(id); return p ? p.name : "conta removi
 const shortModel = m => (m||"").replace(/^claude-/,"").replace(/-\d{8}$/,"");
 
 const PROV_PRESETS = {
-  anthropic: { name:"Claude — principal", kind:"anthropic", base:"",
-    models:"claude-sonnet-5, claude-haiku-4-5, claude-opus-4-8" },
-  groq: { name:"Groq", kind:"openai", base:"https://api.groq.com/openai/v1",
-    models:"llama-3.3-70b-versatile, whisper-large-v3" }
+  // grátis de verdade
+  groq: { name:"Groq", kind:"openai", base:"https://api.groq.com/openai/v1", tag:"grátis",
+    models:"llama-3.3-70b-versatile, llama-3.1-8b-instant", key:"console.groq.com/keys" },
+  gemini: { name:"Google Gemini", kind:"openai", base:"https://generativelanguage.googleapis.com/v1beta/openai", tag:"grátis",
+    models:"gemini-2.5-flash, gemini-2.5-pro", key:"aistudio.google.com/apikey" },
+  openrouter: { name:"OpenRouter", kind:"openai", base:"https://openrouter.ai/api/v1", tag:"grátis",
+    models:"meta-llama/llama-3.3-70b-instruct:free, deepseek/deepseek-chat", key:"openrouter.ai/keys" },
+  // locais (US$0, sua máquina, sem chave)
+  ollama: { name:"Ollama (local)", kind:"openai", base:"http://localhost:11434/v1", tag:"local",
+    models:"llama3.2, qwen2.5, deepseek-r1", key:"—" },
+  lmstudio: { name:"LM Studio (local)", kind:"openai", base:"http://localhost:1234/v1", tag:"local",
+    models:"seu-modelo-local", key:"—" },
+  // baratos (China / open-source)
+  deepseek: { name:"DeepSeek", kind:"openai", base:"https://api.deepseek.com", tag:"barato",
+    models:"deepseek-chat, deepseek-reasoner", key:"platform.deepseek.com" },
+  qwen: { name:"Qwen (Alibaba)", kind:"openai", base:"https://dashscope-intl.aliyuncs.com/compatible-mode/v1", tag:"barato",
+    models:"qwen-max, qwen-plus", key:"dashscope console" },
+  kimi: { name:"Kimi (Moonshot)", kind:"openai", base:"https://api.moonshot.ai/v1", tag:"barato",
+    models:"kimi-k2-0905-preview, moonshot-v1-8k", key:"platform.moonshot.ai" },
+  together: { name:"Together", kind:"openai", base:"https://api.together.xyz/v1", tag:"barato",
+    models:"meta-llama/Llama-3.3-70B-Instruct-Turbo", key:"api.together.xyz" },
+  // pagos (padrão)
+  anthropic: { name:"Claude (Anthropic)", kind:"anthropic", base:"", tag:"pago",
+    models:"claude-sonnet-5, claude-haiku-4-5, claude-opus-4-8", key:"console.anthropic.com" },
+  openai: { name:"OpenAI", kind:"openai", base:"https://api.openai.com/v1", tag:"pago·cors",
+    models:"gpt-5, gpt-4.1-mini", key:"platform.openai.com" },
+  xai: { name:"Grok (xAI)", kind:"openai", base:"https://api.x.ai/v1", tag:"pago",
+    models:"grok-4, grok-3-mini", key:"console.x.ai" },
+  mistral: { name:"Mistral", kind:"openai", base:"https://api.mistral.ai/v1", tag:"pago",
+    models:"mistral-large-latest, mistral-small-latest", key:"console.mistral.ai" }
 };
+const PRESET_ORDER=["groq","gemini","openrouter","ollama","lmstudio","deepseek","qwen","kimi","together","anthropic","openai","xai","mistral"];
+const TAG_COLOR={"grátis":"var(--ok)","local":"var(--ac2)","barato":"var(--warn)","pago":"var(--tx3)","pago·cors":"var(--tx3)"};
 let editingProv=null;
 
 function patDays(){ const t=parseInt(localStorage.getItem(LS_KEY+"-patexp")||"0",10); if(!t) return null; return Math.floor((t-Date.now())/86400000); }
@@ -1457,12 +1494,25 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   const mu=document.getElementById("mcpUrlInput"); if(mu) mu.value=DB.settings.mcpUrl||MCP_URL_DEFAULT;
   renderAIDirectory();
   renderMcpConnections();
+  renderPresetGrid(); renderProvs();
   const wt=document.getElementById("wdTopicInput"); if(wt) wt.value=DB.settings.ntfyTopic||"";
   renderWatchdog();
   renderMembers();
   renderAccHeader();
   switchAccTab("conta");
   document.getElementById("aiModal").classList.add("open"); }
+function renderPresetGrid(){
+  const el=document.getElementById("presetGrid"); if(!el) return;
+  el.innerHTML=`<div class="ai-cards">`+PRESET_ORDER.map(id=>{ const p=PROV_PRESETS[id];
+    return `<div class="ai-card" style="gap:6px">
+      <div class="ai-h" style="justify-content:space-between">
+        <b style="font-size:13px">${esc(p.name)}</b>
+        <span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;color:${TAG_COLOR[p.tag]||"var(--tx3)"}">${esc(p.tag)}</span>
+      </div>
+      <button class="btn sm ${p.tag==="grátis"||p.tag==="local"?"primary":""}" onclick="openProvForm('${id}');switchAccTab('chat')">Usar →</button>
+    </div>`;
+  }).join("")+`</div>`;
+}
 function renderProvs(){
   const el=document.getElementById("provList");
   el.innerHTML = PROVS().map(p=>`
@@ -1478,7 +1528,7 @@ function renderProvs(){
 function openProvForm(preset, id){
   editingProv=id||null;
   const f=document.getElementById("provForm"); f.style.display="block";
-  const p = id ? getProv(id) : (preset ? PROV_PRESETS[preset] : {name:"",kind:"anthropic",base:"",models:""});
+  const p = id ? getProv(id) : (preset ? PROV_PRESETS[preset] : {name:"",kind:"openai",base:"",models:""});
   document.getElementById("pvName").value = p.name||"";
   document.getElementById("pvKind").value = p.kind||"anthropic";
   document.getElementById("pvBase").value = p.base || p.baseUrl || "";
@@ -1493,13 +1543,14 @@ function pvKindChanged(){
 function saveProv(){
   const name=document.getElementById("pvName").value.trim();
   const key=document.getElementById("pvKey").value.trim();
+  const base=document.getElementById("pvBase").value.trim().replace(/\/+$/,"");
   const models=document.getElementById("pvModels").value.split(",").map(s=>s.trim()).filter(Boolean);
+  const isLocal=/localhost|127\.0\.0\.1/.test(base);
   if(!name) return alert("Dá um nome pra conta.");
-  if(!key) return alert("Cola a API key.");
+  if(!key && !isLocal) return alert("Cola a API key (provedores locais como Ollama podem ficar sem).");
   if(!models.length) return alert("Informa pelo menos um modelo.");
   const data={ name, kind:document.getElementById("pvKind").value,
-    baseUrl:document.getElementById("pvBase").value.trim().replace(/\/+$/,""),
-    apiKey:key, models };
+    baseUrl:base, apiKey:key||"local", models };
   if(data.kind==="openai" && !data.baseUrl) return alert("OpenAI-compatível precisa da Base URL.");
   if(editingProv){ Object.assign(getProv(editingProv), data); }
   else{ DB.settings.providers.push({id:uid(), ...data}); }
@@ -1524,7 +1575,7 @@ const getChat = () => {
 };
 
 function newChat(pjId){
-  if(!PROVS().length){ alert("Cadastra uma conta de IA primeiro (botão ⚙ IAs, no topo)."); openAiModal(); return; }
+  if(!PROVS().length){ uiToast("Adicione uma conta de IA primeiro — escolha um modelo grátis/local em 💬 Chat.", "warn"); openAiModal(); switchAccTab("chat"); return; }
   const f=findNode(pjId);
   const prov=PROVS()[0];
   const chat={ id:uid(), title:"", providerId:prov.id, model:prov.models[0], messages:[], ctx:[] };
