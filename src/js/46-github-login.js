@@ -66,6 +66,7 @@ function openAiModal(){ renderProvs(); document.getElementById("provForm").style
   renderPresetGrid(); renderProvs();
   const wt=document.getElementById("wdTopicInput"); if(wt) wt.value=DB.settings.ntfyTopic||"";
   renderWatchdog();
+  if(typeof renderPrefs==="function") renderPrefs();
   renderMembers();
   renderAccHeader();
   switchAccTab("conta");

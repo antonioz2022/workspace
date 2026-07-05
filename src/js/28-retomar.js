@@ -97,6 +97,7 @@ function markRecent(pid){
 let resumeDismissed=false;
 function renderResumeBanner(){
   const el=document.getElementById("resumeBanner"); if(!el) return;
+  if(typeof prefOn==="function" && !prefOn("resumeBanner")){ el.classList.remove("show"); return; }   // 🎚 preferência
   const cb=document.getElementById("collabBanner");
   if(resumeDismissed || (cb && cb.classList.contains("show"))){ el.classList.remove("show"); return; }
   let f=null;

@@ -1,6 +1,7 @@
 /* ============ auto-refresh no foco + auto-ping (só fatos, nunca IA) ============ */
 let _autoBusy=false;
 async function autoRefreshAll(force){
+  if(typeof prefOn==="function" && !prefOn("autoRefresh")) return;   // 🎚 preferência
   if(_autoBusy) return; _autoBusy=true;
   try{
     if(stateSyncOn()) await pullState().catch(()=>{});
@@ -13,7 +14,7 @@ async function autoRefreshAll(force){
     }
   }finally{ _autoBusy=false; }
 }
-function onAppFocus(){ autoRefreshAll(false); if(stateSyncOn()) pullState({force:false}).catch(()=>{}); }
+function onAppFocus(){ if(typeof prefOn==="function" && !prefOn("autoRefresh")) return; autoRefreshAll(false); if(stateSyncOn()) pullState({force:false}).catch(()=>{}); }
 window.addEventListener("focus", onAppFocus);
 document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") onAppFocus(); });
 setInterval(()=>{ if(document.visibilityState==="visible") autoRefreshAll(true); }, 5*60*1000);

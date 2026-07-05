@@ -1,5 +1,10 @@
 /* ================= estado ================= */
 const LS_KEY = "workspace-map-v3";
+// ⚠ estas consts são usadas por hardenDB/migrate DENTRO do load() logo abaixo — precisam
+// vir ANTES do `let DB=load()`. Declaradas depois, dão TDZ no load: o catch engolia o erro
+// e DESCARTAVA o estado salvo (workspace zerada + logout a cada reload — bug real, só se
+// manifestava com dados). Coberto pelo e2e "sobrevive ao reload".
+const NODE_STATUS=["ativo","pausado","concluido"], TODO_PRIOS=["alta","media","baixa"];
 let DB = load();
 let cam = JSON.parse(localStorage.getItem(LS_KEY+"-cam") || "null") || {x:0, y:0, z:1};
 let expanded = new Set(JSON.parse(localStorage.getItem(LS_KEY+"-exp") || "[]"));
@@ -32,7 +37,6 @@ function isPrivateHost(u){
 function safeCoord(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
 // repo GitHub estrito owner/repo (2 segmentos seguros, sem "..") — impede que `../` redirecione a API.
 function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(v) && !v.includes("..")) ? v : ""; }
-const NODE_STATUS=["ativo","pausado","concluido"], TODO_PRIOS=["alta","media","baixa"];
 // config LOCAL-ONLY: segredos + config de máquina que NUNCA vêm do repo/backup.
 // Ao aplicar estado que ENTRA (pull/restore/import) apagamos qualquer versão injetada
 // ANTES de restaurar a local — senão um mcpUrl/providers plantado no state.json

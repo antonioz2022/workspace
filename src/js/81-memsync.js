@@ -64,6 +64,7 @@ function memAutoDraftOn(){ return ((DB.settings||{}).memAutoDraft)!==false; }
 function memAutoToggle(pid){
   DB.settings=DB.settings||{}; DB.settings.memAutoDraft=!memAutoDraftOn();
   save(); if(typeof scheduleSync==="function") scheduleSync();
+  if(typeof renderPrefs==="function") renderPrefs();   // 🎚 mesma chave da aba Preferências
   const f=findNode(pid); if(f&&f.type==="pj") hydrateMemSync(f.co,f.pj);
   uiToast(memAutoDraftOn()?"Rascunho automático ligado: ao abrir o painel, commits sem checkpoint viram sessão na memória.":"Rascunho automático desligado: volta a pedir o clique no banner.");
 }

@@ -156,7 +156,10 @@ function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v|
    mostra o diff se você tiver edição local). É leve: só um GET do arquivo pequeno. */
 let collabTimer=null, collabSeenAt=0;
 function startCollabPoll(){ clearInterval(collabTimer); collabTimer=setInterval(collabTick, 45000); }
-function collabTick(){ if(document.visibilityState==="visible") checkRemoteChanges().catch(()=>{}); }
+function collabTick(){
+  if(typeof prefOn==="function" && !prefOn("collabNotify")) return;   // 🎚 preferência
+  if(document.visibilityState==="visible") checkRemoteChanges().catch(()=>{});
+}
 async function checkRemoteChanges(){
   if(!stateSyncOn() || statePushing || stateApplying) return;
   const f=await ghGetFile(stateRepo(), STATE_PATH).catch(()=>null); if(!f) return;

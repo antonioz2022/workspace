@@ -39,6 +39,7 @@
     <button class="btn ic" id="moreBtn" onclick="toggleMore(event)" title="Mais opções" aria-label="Mais opções" aria-haspopup="true" aria-expanded="false">⋯</button>
     <div class="more-menu" id="moreMenu" role="menu">
       <button class="mm" role="menuitem" id="themeToggle" onclick="closeMore();toggleTheme()">☀️ Tema claro</button>
+      <button class="mm" role="menuitem" onclick="closeMore();openPrefs()">🎚 Preferências</button>
       <button class="mm" role="menuitem" id="brainBtn" onclick="closeMore();connectBrainClick()">🧠 Conectar cérebro</button>
       <button class="mm" role="menuitem" onclick="closeMore();openAsk()">🧠 Perguntar à brain</button>
       <button class="mm" role="menuitem" onclick="closeMore();openCockpit()">🎛 Cockpit</button>
@@ -204,6 +205,7 @@
     <button class="acc-tab" data-tab="ias" onclick="switchAccTab('ias')">🤖 IAs</button>
     <button class="acc-tab" data-tab="chat" onclick="switchAccTab('chat')">💬 Chat</button>
     <button class="acc-tab" data-tab="vigia" onclick="switchAccTab('vigia')">🛰 Vigia</button>
+    <button class="acc-tab" data-tab="prefs" onclick="switchAccTab('prefs')">🎚 Preferências</button>
     <button class="acc-tab" data-tab="avancado" onclick="switchAccTab('avancado')">Avançado</button>
   </div>
 
@@ -212,6 +214,15 @@
     <div id="ghTokenStatus" style="font-size:12px; color:var(--tx3); margin:0 0 12px"></div>
     <div class="dr-sec" style="margin:4px 0 8px">☁ Sua workspace</div>
     <div id="wsState"></div>
+  </div>
+
+  <div class="tabpane" id="tab-prefs">
+    <h3 style="font-size:15px; margin:0 0 3px">🎚 Preferências</h3>
+    <p style="color:var(--tx2); font-size:12px; margin:0 0 6px">
+      O Córtex automatiza por padrão; aqui você escolhe o que fica ligado. As opções abaixo
+      <b>sincronizam entre os seus aparelhos</b> (o tema é a exceção: fica só neste navegador).
+    </p>
+    <div id="prefsList"></div>
   </div>
 
   <div class="tabpane" id="tab-avancado">

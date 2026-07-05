@@ -954,3 +954,71 @@ test("servidor de teste só serve o allowlist do PWA (nada de src/ nem seed.loca
   expect(codes.mod, "fonte src/ não servida").toBe(404);
   expect(codes.manifest, "estático do PWA continua ok").toBe(200);
 });
+
+test("🎚 preferências: abre pelo menu ⋯, defaults ligados e a escolha persiste após recarregar", async ({ page }) => {
+  await page.click("#moreBtn");
+  await page.locator('#moreMenu button:has-text("Preferências")').click();
+  await expect(page.locator("#aiModal")).toHaveClass(/open/);
+  await expect(page.locator('.acc-tab[data-tab="prefs"]')).toHaveClass(/on/);
+  const sw = page.locator("#prefsList .pref-sw");
+  await expect(sw).toHaveCount(5);                                        // 4 automações + tema
+  for (let i = 0; i < 4; i++) await expect(sw.nth(i)).toHaveClass(/on/);  // padrão: tudo ligado
+  // desligar o rascunho automático aqui usa a MESMA chave que o banner de memória lê
+  await page.locator(".pref-item", { hasText: "Rascunho automático" }).locator(".pref-sw").click();
+  await expect(page.locator(".pref-item", { hasText: "Rascunho automático" }).locator(".pref-sw")).not.toHaveClass(/on/);
+  expect(await page.evaluate(() => memAutoDraftOn())).toBe(false);
+  // tema: interruptor local, troca o data-theme na hora
+  await page.locator(".pref-item", { hasText: "Tema claro" }).locator(".pref-sw").click();
+  expect(await page.evaluate(() => document.documentElement.getAttribute("data-theme"))).toBe("light");
+  // recarrega: escolhas sobrevivem (automações no estado; tema no navegador)
+  await page.reload();
+  await expect(page.locator(".hud h1")).toHaveText("Córtex");
+  expect(await page.evaluate(() => ({ draft: prefOn("memAutoDraft"), theme: document.documentElement.getAttribute("data-theme") })))
+    .toEqual({ draft: false, theme: "light" });
+});
+
+test("🎚 preferências gateiam de verdade: retomada, aviso de colaboração e atualização automática", async ({ page }) => {
+  let stateGets = 0;
+  const statePayload = { updatedAt: 9999999999999, device: "outro-aparelho", db: { companies: [] } };
+  await page.route("https://api.github.com/**", (route) => {
+    const url = route.request().url();
+    if (url.includes("/contents/state.json") && route.request().method() === "GET") {
+      stateGets++;
+      return route.fulfill({ json: { sha: "s1", content: Buffer.from(JSON.stringify(statePayload)).toString("base64") } });
+    }
+    return route.fulfill({ status: 404, json: { message: "Not Found" } });
+  });
+  await page.evaluate(() => {
+    DB.companies = [{ id: "c1", name: "Acme", emoji: "🏢", x: 0, y: 0, projects: [{ id: "p1", name: "Site", emoji: "🚀", x: 0, y: 200, apps: [], todos: [], chats: [] }] }];
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "antonioz2022/ws-teste";
+    DB.settings.recentPids = ["p1"]; DB.settings.autoRefresh = false;   // segura o pull automático durante o teste
+    render();
+  });
+  // ▶ retomada: desligada não mostra o banner; ligada mostra
+  expect(await page.evaluate(() => { DB.settings.resumeBanner = false; renderResumeBanner(); return document.getElementById("resumeBanner").classList.contains("show"); })).toBe(false);
+  expect(await page.evaluate(() => { DB.settings.resumeBanner = true; renderResumeBanner(); return document.getElementById("resumeBanner").classList.contains("show"); })).toBe(true);
+  await page.evaluate(() => dismissResume());
+  // 🤝 colaboração: desligada, o tick nem consulta o remoto
+  expect(await page.evaluate(async () => { DB.settings.collabNotify = false; collabTick(); await new Promise((r) => setTimeout(r, 200)); return document.getElementById("collabBanner").classList.contains("show"); })).toBe(false);
+  expect(stateGets, "tick desligado não faz nenhuma chamada").toBe(0);
+  await page.evaluate(() => { DB.settings.collabNotify = true; collabTick(); });
+  await expect(page.locator("#collabBanner")).toHaveClass(/show/);
+  await expect(page.locator("#collabBanner")).toContainText("outro-aparelho");
+  await page.evaluate(() => hideCollab());
+  const g0 = stateGets;
+  // 🔄 atualização automática: desligada, foco e varredura viram no-op
+  await page.evaluate(async () => { onAppFocus(); await autoRefreshAll(true); await new Promise((r) => setTimeout(r, 200)); });
+  expect(stateGets, "desligada: nenhuma busca de estado").toBe(g0);
+  await page.evaluate(async () => { DB.settings.autoRefresh = true; await autoRefreshAll(true); });
+  expect(stateGets, "ligada: volta a puxar o estado").toBeGreaterThan(g0);
+});
+
+test("persistência: a workspace salva sobrevive ao reload (higiene roda no load sem TDZ)", async ({ page }) => {
+  await novaEmpresa(page, "Acme");
+  await novoProjeto(page, "Acme", "Site");
+  await page.reload();
+  await expect(page.locator(".hud h1")).toHaveText("Córtex");
+  await expect(page.locator("#hudCos")).toHaveText("1");   // regressão: TDZ no load() descartava o estado salvo
+  await expect(page.locator("#hudPjs")).toHaveText("1");
+  await expect(page.locator(".node.pj .tag", { hasText: "Site" })).toBeVisible();
+});
