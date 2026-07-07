@@ -135,7 +135,6 @@ function genWorkspaceReport(){
   }
   return s;
 }
-function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function exportReport(){ downloadFile(`cortex-relatorio-${todayStr()}.md`, genWorkspaceReport(), "text/markdown;charset=utf-8"); if(typeof uiToast==="function") uiToast("Relatório da workspace baixado (.md).","ok"); }
 function exportProjectReport(pid){ const f=findNode(pid); if(!f||f.type!=="pj") return; downloadFile(`relatorio-${slug(f.pj.name)}-${todayStr()}.md`, genProjectReport(f.co,f.pj), "text/markdown;charset=utf-8"); if(typeof uiToast==="function") uiToast("Relatório do projeto baixado (.md).","ok"); }
 

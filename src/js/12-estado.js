@@ -37,6 +37,9 @@ function isPrivateHost(u){
 function safeCoord(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
 // repo GitHub estrito owner/repo (2 segmentos seguros, sem "..") — impede que `../` redirecione a API.
 function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(v) && !v.includes("..")) ? v : ""; }
+// cor de empresa: só hex CSS. Ela vai crua pra style="background:…" e esc() não impede
+// declarações extras (";position:fixed" ou "url(https://…)" de rastreio). Fora do padrão → violeta.
+function safeColor(v){ return (typeof v==="string" && /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v)) ? v : "#8B5CF6"; }
 // config LOCAL-ONLY: segredos + config de máquina que NUNCA vêm do repo/backup.
 // Ao aplicar estado que ENTRA (pull/restore/import) apagamos qualquer versão injetada
 // ANTES de restaurar a local — senão um mcpUrl/providers plantado no state.json
@@ -63,6 +66,7 @@ function hardenDB(db){
   if(!db || !Array.isArray(db.companies)) return db;
   for(const c of db.companies){
     c.id=safeId(c.id); if("img" in c) c.img=safeImg(c.img); c.x=safeCoord(c.x); c.y=safeCoord(c.y);
+    c.color=safeColor(c.color);
     if(!Array.isArray(c.projects)) c.projects=[];
     for(const p of c.projects){
       p.id=safeId(p.id); if("img" in p) p.img=safeImg(p.img); p.x=safeCoord(p.x); p.y=safeCoord(p.y);

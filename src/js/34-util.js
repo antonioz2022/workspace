@@ -22,6 +22,30 @@ function toggleTheme(){
   applyTheme(next); localStorage.setItem(LS_KEY+"-theme", next);
 }
 
+/* ===== tempo & clipboard (casa única — antes espalhados por 4 módulos) ===== */
+const todayStr=()=>{ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
+function agoStr(ts){
+  if(!ts) return "";
+  const s=Math.max(0,(Date.now()-ts)/1000);
+  if(s<90) return "agora há pouco";
+  const m=s/60; if(m<90) return "há "+Math.round(m)+" min";
+  const h=m/60; if(h<36) return "há "+Math.round(h)+" h";
+  const d=h/24; if(d<14) return "há "+Math.round(d)+" dias";
+  const w=d/7; if(w<9) return "há "+Math.round(w)+" sem";
+  const mo=d/30; if(mo<18) return "há "+Math.round(mo)+" meses";
+  return "há "+Math.round(d/365)+" ano(s)";
+}
+async function copyText(text){
+  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(text); return true; } }catch(e){}
+  try{
+    const ta=document.createElement("textarea"); ta.value=text;
+    ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta);
+    ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok;
+  }catch(e){ return false; }
+}
+
 function downloadFile(name, text, mime){
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:mime||"text/plain;charset=utf-8"}));
   a.download=name; document.body.appendChild(a); a.click(); a.remove();

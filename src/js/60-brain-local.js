@@ -100,7 +100,6 @@ ${runbookBlock(p)}
 /* metadata inline das pendências: !alta|!media|!baixa · @dono · 📅YYYY-MM-DD no FIM da 1ª linha.
    Fica no texto → viaja no pendencias.md (a IA lê/escreve igual) e o round-trip segue lossless. */
 const prioMark={alta:"🔴", media:"🟡", baixa:"🟢"}, prioName={alta:"alta", media:"média", baixa:"baixa"};
-const todayStr=()=>{ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 function splitTodoMeta(body){
   let prio=null, owner=null, due=null, m, go=true;
   while(go){ go=false;
@@ -200,8 +199,7 @@ async function syncBrain(){
     await writeFile(brainDir,"workspace.json", JSON.stringify(sanitizeStateForSync(),null,2));
     save(); updateHud();
     if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); }
-    const h=new Date();
-    setBrainBtn(`✓ cérebro sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`);
+    setBrainBtn("✓ cérebro sincronizado "+hhmm());
     setTimeout(()=>setBrainBtn("🧠 Sincronizar"), 2600);
   }catch(e){
     setBrainBtn("🧠 Conectar cérebro");

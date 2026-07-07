@@ -39,17 +39,14 @@ async function ghGetFile(repo,path){
   return {sha:j.sha, text:b64d(j.content||"")};
 }
 async function ghPutFile(repo,path,text,sha,msg){
-  const tok=(DB.settings||{}).githubToken;
   const body={message:msg, content:b64e(text)}; if(sha) body.sha=sha;
-  const r=await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`,{
-    method:"PUT",
-    headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
-    body:JSON.stringify(body)});
-  if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
-    const err=new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:""));
-    err.status=r.status;   // quem chama distingue conflito real (409/422) de falha de acesso
-    throw err; }
-  return r.json();
+  try{ return (await ghSend("PUT", `/repos/${repo}/contents/${encodeURIComponent(path)}`, body)).json; }
+  catch(e){
+    const api=(e.json&&e.json.message)?(" · "+e.json.message):"";
+    if(e.status===403) e.message="GitHub 403: o token precisa de Contents: read AND write no repo de estado"+api;
+    else if(e.status===404) e.message="GitHub 404: repo de estado não existe ou o token não o inclui"+api;
+    throw e;   // e.status preservado — o pushState distingue conflito real (409/422) de falha de acesso
+  }
 }
 let lastPushedDbStr=null;
 /* hash curto (djb2+tamanho) SÓ pra detectar mudança — o guard do pull precisa saber se há
@@ -74,7 +71,7 @@ async function pushState(){
         await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
         rememberPushed(dbStr);
         localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
-        const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+        stateBadge("☁ sincronizado "+hhmm(), true);
         statePushing=false; return;
       }catch(e){ lastErr=e; }
     }
@@ -148,7 +145,7 @@ async function pullState({force=false}={}){
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
     if(typeof hideCollab==="function") hideCollab();   // aplicou → some o aviso de novidade
-    const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+    stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) `+hhmm(), true);
   }finally{ stateApplying=false; }
   return true;
 }

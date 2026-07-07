@@ -4,7 +4,6 @@
    pelo MCP (o worker testa o acesso da pessoa ao repo). Token de cada um fica SÓ
    no navegador da pessoa. */
 function roleLabel(p){ p=p||{}; return p.admin?"admin":(p.maintain||p.push)?"editor":"leitor"; }
-function ghApiHeaders(){ return {Authorization:"Bearer "+((DB.settings||{}).githubToken||""), Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"}; }
 async function renderMembers(){
   const list=document.getElementById("membersList"), self=document.getElementById("memberSelf");
   if(!list) return;
@@ -46,15 +45,10 @@ async function inviteMember(){
   if(!u){ alert("Digite o usuário do GitHub da pessoa."); return; }
   if(!stateSyncOn()){ alert("Liga a sync primeiro (token + repo)."); return; }
   try{
-    const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(u),{
-      method:"PUT", headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({permission:role})});
-    if(r.status===201) alert(`Convite enviado pra @${u}! A pessoa aceita no GitHub (e-mail/notificações). Depois manda pra ela o "📋 Copiar convite" com os passos do Córtex.`);
-    else if(r.status===204) alert(`@${u} já era membro. Papel atualizado.`);
-    else{
-      const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403?'403: teu token precisa da permissão "Administration" (read/write) no repo pra convidar. ':"HTTP "+r.status+" · ")+(j.message||""));
-    }
+    const {status}=await ghSend("PUT", "/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(u), {permission:role})
+      .catch(e=>{ throw e.status===403?new Error('403: teu token precisa da permissão "Administration" (read/write) no repo pra convidar. '+((e.json&&e.json.message)||"")):e; });
+    if(status===201) alert(`Convite enviado pra @${u}! A pessoa aceita no GitHub (e-mail/notificações). Depois manda pra ela o "📋 Copiar convite" com os passos do Córtex.`);
+    else alert(`@${u} já era membro. Papel atualizado.`);
     document.getElementById("memberUser").value="";
     renderMembers();
   }catch(e){ alert("Convite: "+(e.message||e)); }
@@ -62,14 +56,13 @@ async function inviteMember(){
 async function removeMember(login){
   if(!(await uiConfirm(`Remover @${login} da workspace? A pessoa (e as IAs dela) perde o acesso à brain.`,{danger:true,okLabel:"Remover"}))) return;
   try{
-    const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(login),{method:"DELETE", headers:ghApiHeaders()});
-    if(!r.ok&&r.status!==204) throw new Error("HTTP "+r.status);
+    await ghSend("DELETE", "/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(login));
     renderMembers();
   }catch(e){ alert("Remover: "+(e.message||e)); }
 }
 async function cancelInvite(id){
   try{
-    await fetch("https://api.github.com/repos/"+stateRepo()+"/invitations/"+id,{method:"DELETE", headers:ghApiHeaders()});
+    await ghSend("DELETE", "/repos/"+stateRepo()+"/invitations/"+id);
     renderMembers();
   }catch(e){ alert("Cancelar: "+(e.message||e)); }
 }

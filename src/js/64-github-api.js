@@ -15,6 +15,23 @@ async function ghGet(path){
   if(!r.ok) throw new Error("GitHub "+r.status+(r.status===401?" (token inválido)":r.status===403?" (rate limit ou sem acesso ao repo)":""));
   return r.json();
 }
+function ghApiHeaders(){ return {Authorization:"Bearer "+((DB.settings||{}).githubToken||""), Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"}; }
+/* ESCRITA na API do GitHub num ponto só (PUT/POST/DELETE + JSON): antes cada feature
+   re-montava o fetch com headers próprios e tratamento de erro diferente. Sucesso →
+   {status, json} (o status importa: convite 201=novo vs 204=já era membro); falha →
+   Error com .status e .json da API (quem chama mapeia pra mensagem amigável). */
+async function ghSend(method, path, body){
+  const r=await fetch("https://api.github.com"+path,{ method,
+    headers:Object.assign(ghApiHeaders(), body!==undefined?{"content-type":"application/json"}:{}),
+    body: body!==undefined?JSON.stringify(body):undefined });
+  let json=null; try{ json=await r.json(); }catch(e){}   // 204 não tem corpo
+  if(!r.ok){
+    const err=new Error("GitHub "+r.status+((json&&json.message)?" · "+json.message:""));
+    err.status=r.status; err.json=json;
+    throw err;
+  }
+  return {status:r.status, json};
+}
 async function ghRepoTelemetry(owner,repo){
   const out={git:null, specs:null, source:"github", repo:null, commits:[], issues:[], prs:[], releases:[], milestones:[], repoError:false};
   const info=await ghGet(`/repos/${owner}/${repo}`);
@@ -89,19 +106,6 @@ async function getTelemetry(p, {promptLocal=false}={}){
   }
   return null;
 }
-function agoStr(ts){
-  if(!ts) return "";
-  const s=Math.max(0,(Date.now()-ts)/1000);
-  if(s<90) return "agora há pouco";
-  const m=s/60; if(m<90) return "há "+Math.round(m)+" min";
-  const h=m/60; if(h<36) return "há "+Math.round(h)+" h";
-  const d=h/24; if(d<14) return "há "+Math.round(d)+" dias";
-  const w=d/7; if(w<9) return "há "+Math.round(w)+" sem";
-  const mo=d/30; if(mo<18) return "há "+Math.round(mo)+" meses";
-  return "há "+Math.round(d/365)+" ano(s)";
-}
-function hasAIProvider(){ return ((DB.settings||{}).providers||[]).some(pr=>pr.apiKey); }
-
 function teleInner(c,p,state){
   const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
   if(state==="loading") return `<div class="skel-wrap" aria-label="carregando…">
@@ -213,13 +217,11 @@ async function createRepoPR(){
   if(!head||!base||head===base){ st.textContent="head e base precisam ser branches diferentes"; st.style.color="var(--warn)"; return; }
   st.textContent="criando…"; st.style.color="var(--tx3)";
   try{
-    const r=await fetch(`https://api.github.com/repos/${repo}/pulls`,{method:"POST",
-      headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({title, head, base, body})});
-    if(!r.ok){ const j=await r.json().catch(()=>({}));
-      const msg=(j.errors&&j.errors[0]&&j.errors[0].message)||j.message||("HTTP "+r.status);
-      throw new Error(/No commits between/i.test(msg)?`não há commits em "${head}" à frente de "${base}"`:((r.status===403)?"o token não pode abrir PR nesse repo (precisa de escrita)":msg)); }
-    const j=await r.json();
+    const j=await ghSend("POST", `/repos/${repo}/pulls`, {title, head, base, body}).then(r=>r.json)
+      .catch(e=>{
+        const msg=(e.json&&e.json.errors&&e.json.errors[0]&&e.json.errors[0].message)||(e.json&&e.json.message)||e.message||String(e);
+        throw new Error(/No commits between/i.test(msg)?`não há commits em "${head}" à frente de "${base}"`:((e.status===403)?"o token não pode abrir PR nesse repo (precisa de escrita)":msg));
+      });
     closeModals();
     uiToast("✓ PR #"+j.number+" criado em "+repo,"ok");
     delete teleCache[prPid];
@@ -238,12 +240,8 @@ async function createRepoIssue(pid){
   const body=await uiPrompt({title:"Nova issue", message:`Descrição (opcional) — vai virar a issue "${title.trim()}":`, placeholder:"detalhes, passos, contexto…", okLabel:"Criar issue"});
   if(body===null) return;   // cancelou na 2ª etapa
   try{
-    const r=await fetch(`https://api.github.com/repos/${repo}/issues`,{method:"POST",
-      headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({title:title.trim(), body:body||""})});
-    if(!r.ok){ const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403||r.status===404)?"o token não pode abrir issues nesse repo (precisa de acesso de escrita)":(j.message||("HTTP "+r.status))); }
-    const j=await r.json();
+    const j=await ghSend("POST", `/repos/${repo}/issues`, {title:title.trim(), body:body||""}).then(r=>r.json)
+      .catch(e=>{ throw (e.status===403||e.status===404)?new Error("o token não pode abrir issues nesse repo (precisa de acesso de escrita)"):e; });
     uiToast("✓ Issue #"+j.number+" criada em "+repo,"ok");
     delete teleCache[pid];   // força releitura pra a issue nova aparecer na lista
     try{ const t=await getTelemetry(f.pj,{promptLocal:false}); paintTele(pid, t?"ready":"none"); }catch(e){}
@@ -277,14 +275,6 @@ async function disconnectProjDir(pid){ await forgetProjDir(pid); paintTele(pid,"
 /* SEM API key (preferência do Antonio, 02/07): monta o contexto do projeto — commits +
    pendências + memória atual — e copia pro clipboard, pra colar no Claude Code / Codex.
    A IA que ele já usa no repo reescreve a memoria.md; o painel sincroniza. */
-async function copyText(text){
-  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(text); return true; } }catch(e){}
-  try{
-    const ta=document.createElement("textarea"); ta.value=text;
-    ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta);
-    ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok;
-  }catch(e){ return false; }
-}
 async function copyProjectContext(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
   const p=f.pj, btn=document.getElementById("copyCtxBtn"), setBtn=s=>{ if(btn) btn.innerHTML=s; };

@@ -1,7 +1,6 @@
 /* ================= IA: contas/provedores ================= */
 const PROVS = () => (DB.settings && DB.settings.providers) || [];
 const getProv = id => PROVS().find(p=>p.id===id);
-const provLabel = id => { const p=getProv(id); return p ? p.name : "conta removida"; };
 const shortModel = m => (m||"").replace(/^claude-/,"").replace(/-\d{8}$/,"");
 
 const PROV_PRESETS = {

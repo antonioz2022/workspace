@@ -5,7 +5,6 @@
 const queuedBrainPids=new Set(), queuedBrainCids=new Set();
 let brainPushTimer=null, brainPushing=false;
 let brainStructDirty=false;   // empresa/projeto excluído → INDEX precisa regenerar mesmo sem nada "dirty"
-const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
 function brainDirOf(c,p){ return `brain/${slug(c.name)}/${slug(p.name)}`; }
 function brainBadge(txt, ok){
   const el=document.getElementById("brainCloudBadge");
@@ -185,13 +184,8 @@ async function uploadBrainFiles(ev){
       const buf=await file.arrayBuffer();
       const path=`${filesDir}/${file.name}`;
       const cur=await ghGetFile(stateRepo(), path).catch(()=>null);
-      const sha=cur?cur.sha:undefined;
-      const tok=(DB.settings||{}).githubToken;
-      const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(path)}`,{
-        method:"PUT",
-        headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
-        body:JSON.stringify(Object.assign({message:"brain: arquivo — "+file.name, content:b64bytes(buf)}, sha?{sha}:{}))});
-      if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){} throw new Error("GitHub "+r.status+(d?" · "+d:"")); }
+      await ghSend("PUT", `/repos/${stateRepo()}/contents/${encodeURIComponent(path)}`,
+        Object.assign({message:"brain: arquivo — "+file.name, content:b64bytes(buf)}, cur?{sha:cur.sha}:{}));
       done++;
     }catch(e){ alert(`Falha ao subir "${file.name}": ${e.message||e}`); }
   }
@@ -311,12 +305,7 @@ async function deleteBrainFile(i){
   const x=filesList[i]; if(!x||!filesDir) return;
   if(!(await uiConfirm(`Excluir "${x.name}" do cérebro?`,{danger:true,okLabel:"Excluir"}))) return;
   try{
-    const tok=(DB.settings||{}).githubToken;
-    const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(filesDir+"/"+x.name)}`,{
-      method:"DELETE",
-      headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
-      body:JSON.stringify({message:"brain: remove — "+x.name, sha:x.sha})});
-    if(!r.ok) throw new Error("GitHub "+r.status);
+    await ghSend("DELETE", `/repos/${stateRepo()}/contents/${encodeURIComponent(filesDir+"/"+x.name)}`, {message:"brain: remove — "+x.name, sha:x.sha});
     if(sel){ const f=findNode(sel.id); if(f) hydrateFiles(f); }
   }catch(e){ alert("Excluir: "+(e.message||e)); }
 }

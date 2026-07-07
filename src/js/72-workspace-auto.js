@@ -54,14 +54,9 @@ async function createWorkspace(){
     owner=await uiDialog({title:"Onde criar a workspace?", message:"Numa organização você ganha times, SSO e permissões finas (enterprise); na sua conta é mais simples. Dá pra transferir depois.", buttons, cancelValue:"__cancel__"});
     if(owner==="__cancel__") return;
   }
-  const url = owner ? `https://api.github.com/orgs/${owner}/repos` : "https://api.github.com/user/repos";
   try{
-    const r=await fetch(url,{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})});
-    if(r.status===422){ uiToast("Já existe um repo com esse nome"+(owner?(" na org "+owner):"")+". Tente outro.","warn"); return; }
-    if(r.status===403){ uiToast("Sem permissão pra criar"+(owner?(" na org "+owner+" — você precisa do papel/scope certo lá"):"")+".","warn"); return; }
-    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||("HTTP "+r.status)); }
-    const j=await r.json();
+    const j=(await ghSend("POST", owner?`/orgs/${owner}/repos`:"/user/repos",
+      {name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})).json;
     setStateRepo(j.full_name);
     uiToast("Workspace criada ✓ semeando…","ok");
     await pushState();
@@ -69,13 +64,25 @@ async function createWorkspace(){
     wsRemember(stateRepo()); renderWsPill();
     renderWorkspaceState();
     uiToast("Pronto! Sua workspace sincroniza sozinha agora.","ok");
-  }catch(e){ uiToast("Criar workspace: "+(e.message||e),"bad"); }
+  }catch(e){
+    if(e.status===422) uiToast("Já existe um repo com esse nome"+(owner?(" na org "+owner):"")+". Tente outro.","warn");
+    else if(e.status===403) uiToast("Sem permissão pra criar"+(owner?(" na org "+owner+" — você precisa do papel/scope certo lá"):"")+".","warn");
+    else uiToast("Criar workspace: "+(e.message||e),"bad");
+  }
 }
 async function connectExistingWorkspace(){
   const login=localStorage.getItem(LS_KEY+"-ghlogin")||"";
   const repo=await uiPrompt({title:"Conectar workspace existente", message:"Cole o repo (owner/repo) que já tem sua workspace:", value:login?login+"/":"", placeholder:"owner/repo", okLabel:"Conectar"});
   if(repo===null) return;
   if(!/^[^/\s]+\/[^/\s]+$/.test(repo)){ uiToast("Formato inválido. Use owner/repo.","warn"); return; }
+  // mapa local que ainda não vive em NENHUMA workspace: conectar puxa o remoto e SUBSTITUI —
+  // sem este aviso, o primeiro-uso com dados locais perdia tudo em silêncio
+  if(!stateRepo() && DB.companies.length){
+    const go=await uiConfirm(
+      `Este navegador tem um mapa local (${DB.companies.length} empresa(s)) que ainda não está salvo em nenhuma workspace.\n\nConectar em "${repo}" PUXA a workspace de lá e SUBSTITUI o mapa deste navegador.\n\nPra não perder o mapa atual: cancele e use "🚀 Criar minha workspace" (ela sobe o mapa como está), ou baixe um ⬇ Backup antes.`,
+      {danger:true, okLabel:"Conectar e substituir"});
+    if(!go) return;
+  }
   setStateRepo(repo);
   const pulled=await pullState({force:true}).catch(()=>false);
   wsRemember(repo); renderWsPill();
@@ -99,9 +106,8 @@ async function deleteWorkspace(){
     placeholder:repo, okLabel:"Apagar tudo de vez", confirmText:repo});
   if(typed===null) return;
   try{
-    const r=await fetch("https://api.github.com/repos/"+repo,{method:"DELETE",headers:ghApiHeaders()});
-    if(!r.ok && r.status!==204){ const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403?"teu token não pode apagar. Re-entre com o GitHub pra pegar o novo acesso. ":"")+(j.message||("HTTP "+r.status))); }
+    await ghSend("DELETE", "/repos/"+repo)
+      .catch(e=>{ throw e.status===403?new Error("teu token não pode apagar. Re-entre com o GitHub pra pegar o novo acesso. "+((e.json&&e.json.message)||"")):e; });
     setStateRepo(""); localStorage.removeItem(LS_KEY+"-syncat");
     wsForget(repo); renderWsPill();
     renderWorkspaceState(); uiToast("Workspace apagada do GitHub.","ok");

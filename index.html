@@ -933,6 +933,9 @@ function isPrivateHost(u){
 function safeCoord(v){ return (typeof v==="number" && isFinite(v)) ? v : null; }
 // repo GitHub estrito owner/repo (2 segmentos seguros, sem "..") — impede que `../` redirecione a API.
 function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(v) && !v.includes("..")) ? v : ""; }
+// cor de empresa: só hex CSS. Ela vai crua pra style="background:…" e esc() não impede
+// declarações extras (";position:fixed" ou "url(https://…)" de rastreio). Fora do padrão → violeta.
+function safeColor(v){ return (typeof v==="string" && /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v)) ? v : "#8B5CF6"; }
 // config LOCAL-ONLY: segredos + config de máquina que NUNCA vêm do repo/backup.
 // Ao aplicar estado que ENTRA (pull/restore/import) apagamos qualquer versão injetada
 // ANTES de restaurar a local — senão um mcpUrl/providers plantado no state.json
@@ -959,6 +962,7 @@ function hardenDB(db){
   if(!db || !Array.isArray(db.companies)) return db;
   for(const c of db.companies){
     c.id=safeId(c.id); if("img" in c) c.img=safeImg(c.img); c.x=safeCoord(c.x); c.y=safeCoord(c.y);
+    c.color=safeColor(c.color);
     if(!Array.isArray(c.projects)) c.projects=[];
     for(const p of c.projects){
       p.id=safeId(p.id); if("img" in p) p.img=safeImg(p.img); p.x=safeCoord(p.x); p.y=safeCoord(p.y);
@@ -2047,6 +2051,30 @@ function toggleTheme(){
   applyTheme(next); localStorage.setItem(LS_KEY+"-theme", next);
 }
 
+/* ===== tempo & clipboard (casa única — antes espalhados por 4 módulos) ===== */
+const todayStr=()=>{ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
+function agoStr(ts){
+  if(!ts) return "";
+  const s=Math.max(0,(Date.now()-ts)/1000);
+  if(s<90) return "agora há pouco";
+  const m=s/60; if(m<90) return "há "+Math.round(m)+" min";
+  const h=m/60; if(h<36) return "há "+Math.round(h)+" h";
+  const d=h/24; if(d<14) return "há "+Math.round(d)+" dias";
+  const w=d/7; if(w<9) return "há "+Math.round(w)+" sem";
+  const mo=d/30; if(mo<18) return "há "+Math.round(mo)+" meses";
+  return "há "+Math.round(d/365)+" ano(s)";
+}
+async function copyText(text){
+  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(text); return true; } }catch(e){}
+  try{
+    const ta=document.createElement("textarea"); ta.value=text;
+    ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta);
+    ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok;
+  }catch(e){ return false; }
+}
+
 function downloadFile(name, text, mime){
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([text],{type:mime||"text/plain;charset=utf-8"}));
   a.download=name; document.body.appendChild(a); a.click(); a.remove();
@@ -2079,7 +2107,6 @@ function importData(ev){
 /* ================= IA: contas/provedores ================= */
 const PROVS = () => (DB.settings && DB.settings.providers) || [];
 const getProv = id => PROVS().find(p=>p.id===id);
-const provLabel = id => { const p=getProv(id); return p ? p.name : "conta removida"; };
 const shortModel = m => (m||"").replace(/^claude-/,"").replace(/-\d{8}$/,"");
 
 const PROV_PRESETS = {
@@ -2850,7 +2877,6 @@ ${runbookBlock(p)}
 /* metadata inline das pendências: !alta|!media|!baixa · @dono · 📅YYYY-MM-DD no FIM da 1ª linha.
    Fica no texto → viaja no pendencias.md (a IA lê/escreve igual) e o round-trip segue lossless. */
 const prioMark={alta:"🔴", media:"🟡", baixa:"🟢"}, prioName={alta:"alta", media:"média", baixa:"baixa"};
-const todayStr=()=>{ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 function splitTodoMeta(body){
   let prio=null, owner=null, due=null, m, go=true;
   while(go){ go=false;
@@ -2950,8 +2976,7 @@ async function syncBrain(){
     await writeFile(brainDir,"workspace.json", JSON.stringify(sanitizeStateForSync(),null,2));
     save(); updateHud();
     if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); }
-    const h=new Date();
-    setBrainBtn(`✓ cérebro sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`);
+    setBrainBtn("✓ cérebro sincronizado "+hhmm());
     setTimeout(()=>setBrainBtn("🧠 Sincronizar"), 2600);
   }catch(e){
     setBrainBtn("🧠 Conectar cérebro");
@@ -3045,6 +3070,23 @@ async function ghGet(path){
   if(!r.ok) throw new Error("GitHub "+r.status+(r.status===401?" (token inválido)":r.status===403?" (rate limit ou sem acesso ao repo)":""));
   return r.json();
 }
+function ghApiHeaders(){ return {Authorization:"Bearer "+((DB.settings||{}).githubToken||""), Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"}; }
+/* ESCRITA na API do GitHub num ponto só (PUT/POST/DELETE + JSON): antes cada feature
+   re-montava o fetch com headers próprios e tratamento de erro diferente. Sucesso →
+   {status, json} (o status importa: convite 201=novo vs 204=já era membro); falha →
+   Error com .status e .json da API (quem chama mapeia pra mensagem amigável). */
+async function ghSend(method, path, body){
+  const r=await fetch("https://api.github.com"+path,{ method,
+    headers:Object.assign(ghApiHeaders(), body!==undefined?{"content-type":"application/json"}:{}),
+    body: body!==undefined?JSON.stringify(body):undefined });
+  let json=null; try{ json=await r.json(); }catch(e){}   // 204 não tem corpo
+  if(!r.ok){
+    const err=new Error("GitHub "+r.status+((json&&json.message)?" · "+json.message:""));
+    err.status=r.status; err.json=json;
+    throw err;
+  }
+  return {status:r.status, json};
+}
 async function ghRepoTelemetry(owner,repo){
   const out={git:null, specs:null, source:"github", repo:null, commits:[], issues:[], prs:[], releases:[], milestones:[], repoError:false};
   const info=await ghGet(`/repos/${owner}/${repo}`);
@@ -3119,19 +3161,6 @@ async function getTelemetry(p, {promptLocal=false}={}){
   }
   return null;
 }
-function agoStr(ts){
-  if(!ts) return "";
-  const s=Math.max(0,(Date.now()-ts)/1000);
-  if(s<90) return "agora há pouco";
-  const m=s/60; if(m<90) return "há "+Math.round(m)+" min";
-  const h=m/60; if(h<36) return "há "+Math.round(h)+" h";
-  const d=h/24; if(d<14) return "há "+Math.round(d)+" dias";
-  const w=d/7; if(w<9) return "há "+Math.round(w)+" sem";
-  const mo=d/30; if(mo<18) return "há "+Math.round(mo)+" meses";
-  return "há "+Math.round(d/365)+" ano(s)";
-}
-function hasAIProvider(){ return ((DB.settings||{}).providers||[]).some(pr=>pr.apiKey); }
-
 function teleInner(c,p,state){
   const openN=(p.todos||[]).filter(x=>!x.done).length, totN=(p.todos||[]).length, t=teleCache[p.id];
   if(state==="loading") return `<div class="skel-wrap" aria-label="carregando…">
@@ -3243,13 +3272,11 @@ async function createRepoPR(){
   if(!head||!base||head===base){ st.textContent="head e base precisam ser branches diferentes"; st.style.color="var(--warn)"; return; }
   st.textContent="criando…"; st.style.color="var(--tx3)";
   try{
-    const r=await fetch(`https://api.github.com/repos/${repo}/pulls`,{method:"POST",
-      headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({title, head, base, body})});
-    if(!r.ok){ const j=await r.json().catch(()=>({}));
-      const msg=(j.errors&&j.errors[0]&&j.errors[0].message)||j.message||("HTTP "+r.status);
-      throw new Error(/No commits between/i.test(msg)?`não há commits em "${head}" à frente de "${base}"`:((r.status===403)?"o token não pode abrir PR nesse repo (precisa de escrita)":msg)); }
-    const j=await r.json();
+    const j=await ghSend("POST", `/repos/${repo}/pulls`, {title, head, base, body}).then(r=>r.json)
+      .catch(e=>{
+        const msg=(e.json&&e.json.errors&&e.json.errors[0]&&e.json.errors[0].message)||(e.json&&e.json.message)||e.message||String(e);
+        throw new Error(/No commits between/i.test(msg)?`não há commits em "${head}" à frente de "${base}"`:((e.status===403)?"o token não pode abrir PR nesse repo (precisa de escrita)":msg));
+      });
     closeModals();
     uiToast("✓ PR #"+j.number+" criado em "+repo,"ok");
     delete teleCache[prPid];
@@ -3268,12 +3295,8 @@ async function createRepoIssue(pid){
   const body=await uiPrompt({title:"Nova issue", message:`Descrição (opcional) — vai virar a issue "${title.trim()}":`, placeholder:"detalhes, passos, contexto…", okLabel:"Criar issue"});
   if(body===null) return;   // cancelou na 2ª etapa
   try{
-    const r=await fetch(`https://api.github.com/repos/${repo}/issues`,{method:"POST",
-      headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({title:title.trim(), body:body||""})});
-    if(!r.ok){ const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403||r.status===404)?"o token não pode abrir issues nesse repo (precisa de acesso de escrita)":(j.message||("HTTP "+r.status))); }
-    const j=await r.json();
+    const j=await ghSend("POST", `/repos/${repo}/issues`, {title:title.trim(), body:body||""}).then(r=>r.json)
+      .catch(e=>{ throw (e.status===403||e.status===404)?new Error("o token não pode abrir issues nesse repo (precisa de acesso de escrita)"):e; });
     uiToast("✓ Issue #"+j.number+" criada em "+repo,"ok");
     delete teleCache[pid];   // força releitura pra a issue nova aparecer na lista
     try{ const t=await getTelemetry(f.pj,{promptLocal:false}); paintTele(pid, t?"ready":"none"); }catch(e){}
@@ -3307,14 +3330,6 @@ async function disconnectProjDir(pid){ await forgetProjDir(pid); paintTele(pid,"
 /* SEM API key (preferência do Antonio, 02/07): monta o contexto do projeto — commits +
    pendências + memória atual — e copia pro clipboard, pra colar no Claude Code / Codex.
    A IA que ele já usa no repo reescreve a memoria.md; o painel sincroniza. */
-async function copyText(text){
-  try{ if(navigator.clipboard){ await navigator.clipboard.writeText(text); return true; } }catch(e){}
-  try{
-    const ta=document.createElement("textarea"); ta.value=text;
-    ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta);
-    ta.focus(); ta.select(); const ok=document.execCommand("copy"); document.body.removeChild(ta); return ok;
-  }catch(e){ return false; }
-}
 async function copyProjectContext(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
   const p=f.pj, btn=document.getElementById("copyCtxBtn"), setBtn=s=>{ if(btn) btn.innerHTML=s; };
@@ -3454,17 +3469,14 @@ async function ghGetFile(repo,path){
   return {sha:j.sha, text:b64d(j.content||"")};
 }
 async function ghPutFile(repo,path,text,sha,msg){
-  const tok=(DB.settings||{}).githubToken;
   const body={message:msg, content:b64e(text)}; if(sha) body.sha=sha;
-  const r=await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`,{
-    method:"PUT",
-    headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
-    body:JSON.stringify(body)});
-  if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
-    const err=new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:""));
-    err.status=r.status;   // quem chama distingue conflito real (409/422) de falha de acesso
-    throw err; }
-  return r.json();
+  try{ return (await ghSend("PUT", `/repos/${repo}/contents/${encodeURIComponent(path)}`, body)).json; }
+  catch(e){
+    const api=(e.json&&e.json.message)?(" · "+e.json.message):"";
+    if(e.status===403) e.message="GitHub 403: o token precisa de Contents: read AND write no repo de estado"+api;
+    else if(e.status===404) e.message="GitHub 404: repo de estado não existe ou o token não o inclui"+api;
+    throw e;   // e.status preservado — o pushState distingue conflito real (409/422) de falha de acesso
+  }
 }
 let lastPushedDbStr=null;
 /* hash curto (djb2+tamanho) SÓ pra detectar mudança — o guard do pull precisa saber se há
@@ -3489,7 +3501,7 @@ async function pushState(){
         await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
         rememberPushed(dbStr);
         localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
-        const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+        stateBadge("☁ sincronizado "+hhmm(), true);
         statePushing=false; return;
       }catch(e){ lastErr=e; }
     }
@@ -3563,7 +3575,7 @@ async function pullState({force=false}={}){
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
     if(typeof hideCollab==="function") hideCollab();   // aplicou → some o aviso de novidade
-    const h=new Date(); stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
+    stateBadge(`☁ atualizado do repo (por ${String(payload.device||"?").slice(0,24)}) `+hhmm(), true);
   }finally{ stateApplying=false; }
   return true;
 }
@@ -3659,14 +3671,9 @@ async function createWorkspace(){
     owner=await uiDialog({title:"Onde criar a workspace?", message:"Numa organização você ganha times, SSO e permissões finas (enterprise); na sua conta é mais simples. Dá pra transferir depois.", buttons, cancelValue:"__cancel__"});
     if(owner==="__cancel__") return;
   }
-  const url = owner ? `https://api.github.com/orgs/${owner}/repos` : "https://api.github.com/user/repos";
   try{
-    const r=await fetch(url,{method:"POST",headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})});
-    if(r.status===422){ uiToast("Já existe um repo com esse nome"+(owner?(" na org "+owner):"")+". Tente outro.","warn"); return; }
-    if(r.status===403){ uiToast("Sem permissão pra criar"+(owner?(" na org "+owner+" — você precisa do papel/scope certo lá"):"")+".","warn"); return; }
-    if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.message||("HTTP "+r.status)); }
-    const j=await r.json();
+    const j=(await ghSend("POST", owner?`/orgs/${owner}/repos`:"/user/repos",
+      {name, private:true, auto_init:true, description:"Córtex workspace — brain + estado (privado)"})).json;
     setStateRepo(j.full_name);
     uiToast("Workspace criada ✓ semeando…","ok");
     await pushState();
@@ -3674,13 +3681,25 @@ async function createWorkspace(){
     wsRemember(stateRepo()); renderWsPill();
     renderWorkspaceState();
     uiToast("Pronto! Sua workspace sincroniza sozinha agora.","ok");
-  }catch(e){ uiToast("Criar workspace: "+(e.message||e),"bad"); }
+  }catch(e){
+    if(e.status===422) uiToast("Já existe um repo com esse nome"+(owner?(" na org "+owner):"")+". Tente outro.","warn");
+    else if(e.status===403) uiToast("Sem permissão pra criar"+(owner?(" na org "+owner+" — você precisa do papel/scope certo lá"):"")+".","warn");
+    else uiToast("Criar workspace: "+(e.message||e),"bad");
+  }
 }
 async function connectExistingWorkspace(){
   const login=localStorage.getItem(LS_KEY+"-ghlogin")||"";
   const repo=await uiPrompt({title:"Conectar workspace existente", message:"Cole o repo (owner/repo) que já tem sua workspace:", value:login?login+"/":"", placeholder:"owner/repo", okLabel:"Conectar"});
   if(repo===null) return;
   if(!/^[^/\s]+\/[^/\s]+$/.test(repo)){ uiToast("Formato inválido. Use owner/repo.","warn"); return; }
+  // mapa local que ainda não vive em NENHUMA workspace: conectar puxa o remoto e SUBSTITUI —
+  // sem este aviso, o primeiro-uso com dados locais perdia tudo em silêncio
+  if(!stateRepo() && DB.companies.length){
+    const go=await uiConfirm(
+      `Este navegador tem um mapa local (${DB.companies.length} empresa(s)) que ainda não está salvo em nenhuma workspace.\n\nConectar em "${repo}" PUXA a workspace de lá e SUBSTITUI o mapa deste navegador.\n\nPra não perder o mapa atual: cancele e use "🚀 Criar minha workspace" (ela sobe o mapa como está), ou baixe um ⬇ Backup antes.`,
+      {danger:true, okLabel:"Conectar e substituir"});
+    if(!go) return;
+  }
   setStateRepo(repo);
   const pulled=await pullState({force:true}).catch(()=>false);
   wsRemember(repo); renderWsPill();
@@ -3704,9 +3723,8 @@ async function deleteWorkspace(){
     placeholder:repo, okLabel:"Apagar tudo de vez", confirmText:repo});
   if(typed===null) return;
   try{
-    const r=await fetch("https://api.github.com/repos/"+repo,{method:"DELETE",headers:ghApiHeaders()});
-    if(!r.ok && r.status!==204){ const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403?"teu token não pode apagar. Re-entre com o GitHub pra pegar o novo acesso. ":"")+(j.message||("HTTP "+r.status))); }
+    await ghSend("DELETE", "/repos/"+repo)
+      .catch(e=>{ throw e.status===403?new Error("teu token não pode apagar. Re-entre com o GitHub pra pegar o novo acesso. "+((e.json&&e.json.message)||"")):e; });
     setStateRepo(""); localStorage.removeItem(LS_KEY+"-syncat");
     wsForget(repo); renderWsPill();
     renderWorkspaceState(); uiToast("Workspace apagada do GitHub.","ok");
@@ -3816,7 +3834,6 @@ function wsBoot(){ const r=stateRepo(); if(r) wsRemember(r); renderWsPill(); }
 const queuedBrainPids=new Set(), queuedBrainCids=new Set();
 let brainPushTimer=null, brainPushing=false;
 let brainStructDirty=false;   // empresa/projeto excluído → INDEX precisa regenerar mesmo sem nada "dirty"
-const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
 function brainDirOf(c,p){ return `brain/${slug(c.name)}/${slug(p.name)}`; }
 function brainBadge(txt, ok){
   const el=document.getElementById("brainCloudBadge");
@@ -3996,13 +4013,8 @@ async function uploadBrainFiles(ev){
       const buf=await file.arrayBuffer();
       const path=`${filesDir}/${file.name}`;
       const cur=await ghGetFile(stateRepo(), path).catch(()=>null);
-      const sha=cur?cur.sha:undefined;
-      const tok=(DB.settings||{}).githubToken;
-      const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(path)}`,{
-        method:"PUT",
-        headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
-        body:JSON.stringify(Object.assign({message:"brain: arquivo — "+file.name, content:b64bytes(buf)}, sha?{sha}:{}))});
-      if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){} throw new Error("GitHub "+r.status+(d?" · "+d:"")); }
+      await ghSend("PUT", `/repos/${stateRepo()}/contents/${encodeURIComponent(path)}`,
+        Object.assign({message:"brain: arquivo — "+file.name, content:b64bytes(buf)}, cur?{sha:cur.sha}:{}));
       done++;
     }catch(e){ alert(`Falha ao subir "${file.name}": ${e.message||e}`); }
   }
@@ -4122,12 +4134,7 @@ async function deleteBrainFile(i){
   const x=filesList[i]; if(!x||!filesDir) return;
   if(!(await uiConfirm(`Excluir "${x.name}" do cérebro?`,{danger:true,okLabel:"Excluir"}))) return;
   try{
-    const tok=(DB.settings||{}).githubToken;
-    const r=await fetch(`https://api.github.com/repos/${stateRepo()}/contents/${encodeURIComponent(filesDir+"/"+x.name)}`,{
-      method:"DELETE",
-      headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
-      body:JSON.stringify({message:"brain: remove — "+x.name, sha:x.sha})});
-    if(!r.ok) throw new Error("GitHub "+r.status);
+    await ghSend("DELETE", `/repos/${stateRepo()}/contents/${encodeURIComponent(filesDir+"/"+x.name)}`, {message:"brain: remove — "+x.name, sha:x.sha});
     if(sel){ const f=findNode(sel.id); if(f) hydrateFiles(f); }
   }catch(e){ alert("Excluir: "+(e.message||e)); }
 }
@@ -4414,7 +4421,6 @@ function genWorkspaceReport(){
   }
   return s;
 }
-function nowStr(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function exportReport(){ downloadFile(`cortex-relatorio-${todayStr()}.md`, genWorkspaceReport(), "text/markdown;charset=utf-8"); if(typeof uiToast==="function") uiToast("Relatório da workspace baixado (.md).","ok"); }
 function exportProjectReport(pid){ const f=findNode(pid); if(!f||f.type!=="pj") return; downloadFile(`relatorio-${slug(f.pj.name)}-${todayStr()}.md`, genProjectReport(f.co,f.pj), "text/markdown;charset=utf-8"); if(typeof uiToast==="function") uiToast("Relatório do projeto baixado (.md).","ok"); }
 
@@ -5084,7 +5090,6 @@ async function renderWatchdog(){
    pelo MCP (o worker testa o acesso da pessoa ao repo). Token de cada um fica SÓ
    no navegador da pessoa. */
 function roleLabel(p){ p=p||{}; return p.admin?"admin":(p.maintain||p.push)?"editor":"leitor"; }
-function ghApiHeaders(){ return {Authorization:"Bearer "+((DB.settings||{}).githubToken||""), Accept:"application/vnd.github+json", "X-GitHub-Api-Version":"2022-11-28"}; }
 async function renderMembers(){
   const list=document.getElementById("membersList"), self=document.getElementById("memberSelf");
   if(!list) return;
@@ -5126,15 +5131,10 @@ async function inviteMember(){
   if(!u){ alert("Digite o usuário do GitHub da pessoa."); return; }
   if(!stateSyncOn()){ alert("Liga a sync primeiro (token + repo)."); return; }
   try{
-    const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(u),{
-      method:"PUT", headers:Object.assign(ghApiHeaders(),{"content-type":"application/json"}),
-      body:JSON.stringify({permission:role})});
-    if(r.status===201) alert(`Convite enviado pra @${u}! A pessoa aceita no GitHub (e-mail/notificações). Depois manda pra ela o "📋 Copiar convite" com os passos do Córtex.`);
-    else if(r.status===204) alert(`@${u} já era membro. Papel atualizado.`);
-    else{
-      const j=await r.json().catch(()=>({}));
-      throw new Error((r.status===403?'403: teu token precisa da permissão "Administration" (read/write) no repo pra convidar. ':"HTTP "+r.status+" · ")+(j.message||""));
-    }
+    const {status}=await ghSend("PUT", "/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(u), {permission:role})
+      .catch(e=>{ throw e.status===403?new Error('403: teu token precisa da permissão "Administration" (read/write) no repo pra convidar. '+((e.json&&e.json.message)||"")):e; });
+    if(status===201) alert(`Convite enviado pra @${u}! A pessoa aceita no GitHub (e-mail/notificações). Depois manda pra ela o "📋 Copiar convite" com os passos do Córtex.`);
+    else alert(`@${u} já era membro. Papel atualizado.`);
     document.getElementById("memberUser").value="";
     renderMembers();
   }catch(e){ alert("Convite: "+(e.message||e)); }
@@ -5142,14 +5142,13 @@ async function inviteMember(){
 async function removeMember(login){
   if(!(await uiConfirm(`Remover @${login} da workspace? A pessoa (e as IAs dela) perde o acesso à brain.`,{danger:true,okLabel:"Remover"}))) return;
   try{
-    const r=await fetch("https://api.github.com/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(login),{method:"DELETE", headers:ghApiHeaders()});
-    if(!r.ok&&r.status!==204) throw new Error("HTTP "+r.status);
+    await ghSend("DELETE", "/repos/"+stateRepo()+"/collaborators/"+encodeURIComponent(login));
     renderMembers();
   }catch(e){ alert("Remover: "+(e.message||e)); }
 }
 async function cancelInvite(id){
   try{
-    await fetch("https://api.github.com/repos/"+stateRepo()+"/invitations/"+id,{method:"DELETE", headers:ghApiHeaders()});
+    await ghSend("DELETE", "/repos/"+stateRepo()+"/invitations/"+id);
     renderMembers();
   }catch(e){ alert("Cancelar: "+(e.message||e)); }
 }
