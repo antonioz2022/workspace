@@ -45,6 +45,53 @@ test("conectar workspace existente: mapa local sem workspace pede confirmação;
   expect(st.repo, "não conectou em nada").toBeNull();
 });
 
+test("arquivos do cérebro: resposta atrasada de outro drawer é descartada (sem corrida)", async ({ page }) => {
+  await page.route("https://api.github.com/**", async (route) => {
+    const url = route.request().url();
+    if (url.includes("brain/lenta/brand")) {   // drawer antigo: responde DEPOIS do novo
+      await new Promise((r) => setTimeout(r, 600));
+      return route.fulfill({ json: [{ name: "logo-lenta.png", type: "file", size: 100, sha: "abc" }] });
+    }
+    return route.fulfill({ json: [] });
+  });
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "meu/ws";
+    DB.companies.push(
+      { id: "colenta", name: "Lenta", emoji: "🏢", x: 0, y: 0, color: "#8B5CF6", projects: [] },
+      { id: "corapida", name: "Rapida", emoji: "🏢", x: 300, y: 0, color: "#8B5CF6", projects: [] });
+    save(); render();
+    openDrawer(findNode("colenta"));                       // dispara o fetch lento
+    setTimeout(() => openDrawer(findNode("corapida")), 120); // troca antes da resposta
+  });
+  await page.waitForTimeout(1000);   // deixa a resposta atrasada da Lenta chegar
+  await expect(page.locator("#drTitle")).toHaveText("Rapida");
+  const st = await page.evaluate(() => ({ n: filesList.length, wrap: document.getElementById("filesWrap").textContent }));
+  expect(st.n, "filesList é o do drawer atual (⬇/✕ não agem no arquivo errado)").toBe(0);
+  expect(st.wrap, "lista da Lenta não vazou pro drawer da Rapida").not.toContain("logo-lenta");
+});
+
+test("cockpit: reabrir dentro do TTL não re-bate a API do repo de código", async ({ page }) => {
+  let codeCalls = 0;
+  await page.route("https://api.github.com/**", (route) => {
+    if (route.request().url().includes("/repos/acme/")) codeCalls++;
+    return route.fulfill({ json: [] });
+  });
+  await page.route("https://workspace-mcp.antonioz2022.workers.dev/**", (route) => route.fulfill({ status: 401, json: { error: "sem auth no teste" } }));
+  await page.evaluate(() => {
+    DB.settings = DB.settings || {}; DB.settings.githubToken = "ghp_mock"; DB.settings.stateRepo = "meu/ws";
+    DB.companies.push({ id: "c1", name: "Co", emoji: "🏢", x: 0, y: 0, color: "#8B5CF6",
+      projects: [{ id: "p1", name: "P", emoji: "🚀", x: 0, y: 0, status: "ativo", github: "acme/repo", apps: [], chats: [], todos: [] }] });
+    save(); render();
+  });
+  await page.evaluate(() => openCockpit());
+  await page.waitForFunction(() => teleCache["p1"] && memSyncCache["p1"]);
+  const after1 = codeCalls;
+  expect(after1, "1ª abertura lê o repo").toBeGreaterThan(0);
+  await page.evaluate(() => { closeModals(); openCockpit(); });
+  await page.waitForTimeout(600);
+  expect(codeCalls, "2ª abertura dentro do TTL reusa o cache").toBe(after1);
+});
+
 test("ghSend: 422 ao criar workspace vira aviso amigável (sem conectar)", async ({ page }) => {
   await page.route("https://api.github.com/**", (route) => {
     const url = route.request().url(), m = route.request().method();

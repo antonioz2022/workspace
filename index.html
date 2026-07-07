@@ -1787,7 +1787,9 @@ async function ping(a, auto){
   if(auto && isPrivateHost(target)){ upd("na","local — abra o serviço p/ verificar"); return; }   // não marca fresh: o clique explícito ainda pinga
   const t0=performance.now();
   try{
-    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),65000);
+    // mesmo teto do vigia 24/7 (20s): serviço que não responde nisso conta como fora;
+    // se for cold start, a própria tentativa acorda o serviço e o próximo ping pega online
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),20000);
     const r=await fetch(target,{signal:ctl.signal}); clearTimeout(timer);
     const ms=Math.round(performance.now()-t0);
     if(r.ok){ upd("ok","online · "+ms+"ms"); } else { upd("bad","HTTP "+r.status); }
@@ -3947,7 +3949,7 @@ async function pullBrainRemote(c,p){
 /* ===== Etapa C: Arquivos & Brand kit (empresa → brand/ · projeto → assets/) =====
    Lê/sobe/apaga arquivos direto no repo-cérebro via Contents API — igual em qualquer
    aparelho. Preview de imagem <1MB via base64 do próprio GET. */
-let filesDir=null, filesList=[];
+let filesDir=null, filesList=[], filesGen=0;   // gen: resposta de um drawer ANTERIOR é descartada
 function b64bytes(buf){
   const b=new Uint8Array(buf); let bin="";
   for(let i=0;i<b.length;i+=0x8000) bin+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
@@ -3965,6 +3967,9 @@ function filesDirFor(f){
 }
 async function hydrateFiles(f){
   const wrap=document.getElementById("filesWrap"); if(!wrap) return;
+  // trocar de drawer no meio do fetch: a resposta ATRASADA do drawer anterior não pode
+  // sobrescrever filesList (⬇/✕ agiriam no arquivo errado) nem pintar preview no novo
+  const gen=++filesGen;
   filesDir=filesDirFor(f); filesList=[];
   if(!stateSyncOn()){
     wrap.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">Pra ver/subir arquivos, configura o token + repo do cérebro em <b>⚙ Contas</b>.</div>`;
@@ -3972,7 +3977,8 @@ async function hydrateFiles(f){
   }
   let items=null;
   try{ items=await ghGet(`/repos/${stateRepo()}/contents/${filesDir}`); }
-  catch(e){ wrap.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; return; }
+  catch(e){ if(gen!==filesGen) return; wrap.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; return; }
+  if(gen!==filesGen) return;
   filesList=(Array.isArray(items)?items:[]).filter(x=>x.type==="file" && x.name!==".gitkeep" && x.name!=="brand.md");
   const rows=filesList.map((x,i)=>`
     <div class="mini-item" style="cursor:default">
@@ -3993,6 +3999,7 @@ async function hydrateFiles(f){
     if(!IMG_RE.test(x.name) || x.size>1048576) return;
     try{
       const j=await ghGet(`/repos/${stateRepo()}/contents/${filesDir}/${encodeURIComponent(x.name)}`);
+      if(gen!==filesGen) return;   // drawer já é outro: não pinta preview alheio
       if(j && j.content){
         const mime=x.name.toLowerCase().endsWith(".svg")?"image/svg+xml":"image/"+x.name.split(".").pop().toLowerCase().replace("jpg","jpeg");
         const el=document.getElementById("fprev-"+i);
@@ -4146,6 +4153,12 @@ async function deleteBrainFile(i){
    no cockpit, e oferece DUAS saídas: 📋 Contexto p/ IA (a IA da sessão reescreve) e
    💾 rascunho de checkpoint gerado dos commits, aceito com 1 clique, sem IA. */
 const memSyncCache={};   // pid -> {stale, count, memTs, codeTs, never, at, commits[]}
+const MEMSYNC_TTL=90000; // 90s: drawer/cockpit reusam o resultado em vez de re-bater a API
+async function memStaleCached(c,p){
+  const cache=memSyncCache[p.id];
+  if(cache && Date.now()-cache.at < MEMSYNC_TTL) return cache;
+  return computeMemStale(c,p);
+}
 async function brainMemoriaTs(c,p){
   // data do último commit no cérebro que tocou a memoria.md deste projeto
   if(!stateSyncOn()) return undefined;                 // sem cérebro → não opina
@@ -4240,7 +4253,7 @@ async function memAutoDraftSweep(){
 async function memDraftCheckpoint(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
   let res=memSyncCache[pid];
-  if(!res || !res.commits || Date.now()-res.at>90000) res=await computeMemStale(f.co,f.pj).catch(()=>null);
+  if(!res || !res.commits || Date.now()-res.at>MEMSYNC_TTL) res=await computeMemStale(f.co,f.pj).catch(()=>null);
   if(!res || !res.commits || !res.commits.length){ uiToast("Nenhum commit novo pra rascunhar."); return; }
   const body=[`Rascunho automático a partir dos commits do repo \`${f.pj.github||""}\` (trabalho sem checkpoint de IA):`]
     .concat(res.commits.map(x=>`- \`${x.sha}\` ${x.when}: ${x.msg}`)).join("\n");
@@ -4280,9 +4293,7 @@ function memDraftDialog(pid, body, next){
 }
 async function hydrateMemSync(c,p){
   const paint=res=>{ const el=document.getElementById("memSyncBanner"); if(el && (!sel||sel.id===p.id)) el.innerHTML = res?memSyncBannerHtml(res,p.id):""; };
-  const cache=memSyncCache[p.id];
-  if(cache && Date.now()-cache.at < 90000){ paint(cache); return; }   // TTL: não re-bate a API a cada re-render
-  paint(await computeMemStale(c,p).catch(()=>null));
+  paint(await memStaleCached(c,p).catch(()=>null));   // TTL dentro do memStaleCached
 }
 /* ===== Etapa E: 🎛 Cockpit — todos os projetos num relance ===== */
 function cockpitRows(){
@@ -4575,11 +4586,12 @@ function openCockpit(){
     }catch(e){ el.textContent="🛰 vigia: status indisponível"; }
   })();
   renderActivityFeed();
-  // telemetria fresca em background pros que dá (pasta concedida ou repo+token)
+  // telemetria em background pros que dá (pasta concedida ou repo+token) — RESPEITANDO os
+  // caches (90s): abrir/fechar o cockpit não re-bate a API toda vez (o 🔄 Atualizar força)
   (async()=>{
     for(const c of DB.companies) for(const p of c.projects){
-      try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
-      try{ if(typeof computeMemStale==="function") await computeMemStale(c,p); }catch(e){}
+      try{ if(!(teleCache[p.id] && Date.now()-teleCache[p.id].at<90000)) await getTelemetry(p,{promptLocal:false}); }catch(e){}
+      try{ if(typeof memStaleCached==="function") await memStaleCached(c,p); }catch(e){}
     }
     renderCockpit();
   })();

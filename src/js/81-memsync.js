@@ -5,6 +5,12 @@
    no cockpit, e oferece DUAS saídas: 📋 Contexto p/ IA (a IA da sessão reescreve) e
    💾 rascunho de checkpoint gerado dos commits, aceito com 1 clique, sem IA. */
 const memSyncCache={};   // pid -> {stale, count, memTs, codeTs, never, at, commits[]}
+const MEMSYNC_TTL=90000; // 90s: drawer/cockpit reusam o resultado em vez de re-bater a API
+async function memStaleCached(c,p){
+  const cache=memSyncCache[p.id];
+  if(cache && Date.now()-cache.at < MEMSYNC_TTL) return cache;
+  return computeMemStale(c,p);
+}
 async function brainMemoriaTs(c,p){
   // data do último commit no cérebro que tocou a memoria.md deste projeto
   if(!stateSyncOn()) return undefined;                 // sem cérebro → não opina
@@ -99,7 +105,7 @@ async function memAutoDraftSweep(){
 async function memDraftCheckpoint(pid){
   const f=findNode(pid); if(!f||f.type!=="pj") return;
   let res=memSyncCache[pid];
-  if(!res || !res.commits || Date.now()-res.at>90000) res=await computeMemStale(f.co,f.pj).catch(()=>null);
+  if(!res || !res.commits || Date.now()-res.at>MEMSYNC_TTL) res=await computeMemStale(f.co,f.pj).catch(()=>null);
   if(!res || !res.commits || !res.commits.length){ uiToast("Nenhum commit novo pra rascunhar."); return; }
   const body=[`Rascunho automático a partir dos commits do repo \`${f.pj.github||""}\` (trabalho sem checkpoint de IA):`]
     .concat(res.commits.map(x=>`- \`${x.sha}\` ${x.when}: ${x.msg}`)).join("\n");
@@ -139,7 +145,5 @@ function memDraftDialog(pid, body, next){
 }
 async function hydrateMemSync(c,p){
   const paint=res=>{ const el=document.getElementById("memSyncBanner"); if(el && (!sel||sel.id===p.id)) el.innerHTML = res?memSyncBannerHtml(res,p.id):""; };
-  const cache=memSyncCache[p.id];
-  if(cache && Date.now()-cache.at < 90000){ paint(cache); return; }   // TTL: não re-bate a API a cada re-render
-  paint(await computeMemStale(c,p).catch(()=>null));
+  paint(await memStaleCached(c,p).catch(()=>null));   // TTL dentro do memStaleCached
 }

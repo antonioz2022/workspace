@@ -118,7 +118,7 @@ async function pullBrainRemote(c,p){
 /* ===== Etapa C: Arquivos & Brand kit (empresa → brand/ · projeto → assets/) =====
    Lê/sobe/apaga arquivos direto no repo-cérebro via Contents API — igual em qualquer
    aparelho. Preview de imagem <1MB via base64 do próprio GET. */
-let filesDir=null, filesList=[];
+let filesDir=null, filesList=[], filesGen=0;   // gen: resposta de um drawer ANTERIOR é descartada
 function b64bytes(buf){
   const b=new Uint8Array(buf); let bin="";
   for(let i=0;i<b.length;i+=0x8000) bin+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));
@@ -136,6 +136,9 @@ function filesDirFor(f){
 }
 async function hydrateFiles(f){
   const wrap=document.getElementById("filesWrap"); if(!wrap) return;
+  // trocar de drawer no meio do fetch: a resposta ATRASADA do drawer anterior não pode
+  // sobrescrever filesList (⬇/✕ agiriam no arquivo errado) nem pintar preview no novo
+  const gen=++filesGen;
   filesDir=filesDirFor(f); filesList=[];
   if(!stateSyncOn()){
     wrap.innerHTML=`<div class="dr-desc" style="color:var(--tx3)">Pra ver/subir arquivos, configura o token + repo do cérebro em <b>⚙ Contas</b>.</div>`;
@@ -143,7 +146,8 @@ async function hydrateFiles(f){
   }
   let items=null;
   try{ items=await ghGet(`/repos/${stateRepo()}/contents/${filesDir}`); }
-  catch(e){ wrap.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; return; }
+  catch(e){ if(gen!==filesGen) return; wrap.innerHTML=`<div class="dr-desc" style="color:var(--warn)">falha: ${esc(e.message||String(e))}</div>`; return; }
+  if(gen!==filesGen) return;
   filesList=(Array.isArray(items)?items:[]).filter(x=>x.type==="file" && x.name!==".gitkeep" && x.name!=="brand.md");
   const rows=filesList.map((x,i)=>`
     <div class="mini-item" style="cursor:default">
@@ -164,6 +168,7 @@ async function hydrateFiles(f){
     if(!IMG_RE.test(x.name) || x.size>1048576) return;
     try{
       const j=await ghGet(`/repos/${stateRepo()}/contents/${filesDir}/${encodeURIComponent(x.name)}`);
+      if(gen!==filesGen) return;   // drawer já é outro: não pinta preview alheio
       if(j && j.content){
         const mime=x.name.toLowerCase().endsWith(".svg")?"image/svg+xml":"image/"+x.name.split(".").pop().toLowerCase().replace("jpg","jpeg");
         const el=document.getElementById("fprev-"+i);

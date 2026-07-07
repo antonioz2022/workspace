@@ -164,7 +164,9 @@ async function ping(a, auto){
   if(auto && isPrivateHost(target)){ upd("na","local — abra o serviço p/ verificar"); return; }   // não marca fresh: o clique explícito ainda pinga
   const t0=performance.now();
   try{
-    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),65000);
+    // mesmo teto do vigia 24/7 (20s): serviço que não responde nisso conta como fora;
+    // se for cold start, a própria tentativa acorda o serviço e o próximo ping pega online
+    const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),20000);
     const r=await fetch(target,{signal:ctl.signal}); clearTimeout(timer);
     const ms=Math.round(performance.now()-t0);
     if(r.ok){ upd("ok","online · "+ms+"ms"); } else { upd("bad","HTTP "+r.status); }

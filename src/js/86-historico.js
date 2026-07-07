@@ -53,11 +53,12 @@ function openCockpit(){
     }catch(e){ el.textContent="🛰 vigia: status indisponível"; }
   })();
   renderActivityFeed();
-  // telemetria fresca em background pros que dá (pasta concedida ou repo+token)
+  // telemetria em background pros que dá (pasta concedida ou repo+token) — RESPEITANDO os
+  // caches (90s): abrir/fechar o cockpit não re-bate a API toda vez (o 🔄 Atualizar força)
   (async()=>{
     for(const c of DB.companies) for(const p of c.projects){
-      try{ await getTelemetry(p,{promptLocal:false}); }catch(e){}
-      try{ if(typeof computeMemStale==="function") await computeMemStale(c,p); }catch(e){}
+      try{ if(!(teleCache[p.id] && Date.now()-teleCache[p.id].at<90000)) await getTelemetry(p,{promptLocal:false}); }catch(e){}
+      try{ if(typeof memStaleCached==="function") await memStaleCached(c,p); }catch(e){}
     }
     renderCockpit();
   })();
