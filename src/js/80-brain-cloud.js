@@ -4,6 +4,7 @@
    fora e o painel importa ao abrir o projeto (quando a pasta local não está no jogo). */
 const queuedBrainPids=new Set(), queuedBrainCids=new Set();
 let brainPushTimer=null, brainPushing=false;
+let brainStructDirty=false;   // empresa/projeto excluído → INDEX precisa regenerar mesmo sem nada "dirty"
 const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
 function brainDirOf(c,p){ return `brain/${slug(c.name)}/${slug(p.name)}`; }
 function brainBadge(txt, ok){
@@ -55,16 +56,17 @@ function queueBrainPush(){
     if(c._coDirty) queuedBrainCids.add(c.id);
     for(const p of c.projects) if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
   }
-  if(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty) return;
+  if(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty && !brainStructDirty) return;
   clearTimeout(brainPushTimer);
   brainPushTimer=setTimeout(flushBrainPush, 4500);
 }
 async function flushBrainPush(){
-  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty)) return;
+  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty && !brainStructDirty)) return;
   brainPushing=true;
   const pids=[...queuedBrainPids]; queuedBrainPids.clear();
   const cids=[...queuedBrainCids]; queuedBrainCids.clear();
   const linksWere=brainLinksDirty; brainLinksDirty=false;   // relações mudaram → regenera GRAFO
+  const structWere=brainStructDirty; brainStructDirty=false; // exclusões → regenera INDEX (o put pula se igual)
   try{
     brainBadge("☁ salvando no cérebro…");
     let touched=false;
@@ -89,6 +91,7 @@ async function flushBrainPush(){
   }catch(e){
     pids.forEach(id=>queuedBrainPids.add(id)); cids.forEach(id=>queuedBrainCids.add(id));
     if(linksWere) brainLinksDirty=true;
+    if(structWere) brainStructDirty=true;
     brainBadge("☁ falha: "+(e.message||e), false);
   }
   brainPushing=false;

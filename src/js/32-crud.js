@@ -60,11 +60,21 @@ function saveCo(){
   }
   save(); scheduleSync(); closeModals(); render();
 }
+/* excluir um nó tira também as relações do grafo que apontavam pra ele (senão ficam
+   órfãs "(nó removido)" pra sempre) e avisa a brain (INDEX/GRAFO regeneram no flush) */
+function dropLinksFor(ids){
+  if(!(DB.links||[]).length) return;
+  const set=new Set(ids), before=DB.links.length;
+  DB.links=DB.links.filter(l=>!set.has(l.from)&&!set.has(l.to));
+  if(DB.links.length!==before) brainLinksDirty=true;
+}
 async function delCo(id){
   const c=findNode(id).co;
   if(!(await uiConfirm(`Excluir "${c.name}" e todos os projetos dela? Não dá pra desfazer.`,{danger:true,okLabel:"Excluir"}))) return;
+  dropLinksFor([id, ...c.projects.flatMap(p=>[p.id, ...(p.apps||[]).map(a=>a.id)])]);
   DB.companies=DB.companies.filter(x=>x.id!==id);
-  closeDrawer(); save(); render();
+  brainStructDirty=true;   // o INDEX do cérebro precisa parar de listar o que saiu
+  closeDrawer(); save(); scheduleSync(); render();
 }
 
 function openPjModalFor(coId, pjId){ pjTargetCo=coId; openPjModal(pjId); }
@@ -142,8 +152,10 @@ async function _pjRepoValidate(){
 async function delPj(id){
   const f=findNode(id);
   if(!(await uiConfirm(`Excluir o projeto "${f.pj.name}"?`,{danger:true,okLabel:"Excluir"}))) return;
+  dropLinksFor([id, ...(f.pj.apps||[]).map(a=>a.id)]);
   f.co.projects=f.co.projects.filter(x=>x.id!==id);
-  closeDrawer(); save(); render();
+  brainStructDirty=true;
+  closeDrawer(); save(); scheduleSync(); render();
 }
 
 function openAppModalFor(pjId, apId){ apTargetPj=pjId; openAppModal(apId); }
@@ -184,8 +196,10 @@ function saveApp(){
 async function delApp(id){
   const f=findNode(id);
   if(!(await uiConfirm(`Excluir "${f.ap.name}"?`,{danger:true,okLabel:"Excluir"}))) return;
+  dropLinksFor([id]);
   f.pj.apps=f.pj.apps.filter(x=>x.id!==id);
-  closeDrawer(); save(); render();
+  f.pj._memDirty=true;   // projeto.md lista os serviços → reescreve no cérebro (igual ao saveApp)
+  closeDrawer(); save(); scheduleSync(); render();
 }
 
 let editingTodo=null;

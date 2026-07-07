@@ -43,6 +43,22 @@ function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+
 // sobreviveria quando o valor local é indefinido e vazaria o token pro domínio do atacante.
 const LOCAL_ONLY_SETTINGS=["githubToken","providers","mcpUrl","dock"];
 function scrubIncomingSettings(db){ if(db&&db.settings) for(const k of LOCAL_ONLY_SETTINGS) delete db.settings[k]; return db; }
+/* aplica um DB que ENTRA (pull/restore/import) preservando o que é LOCAL deste navegador.
+   Ponto ÚNICO do ritual keep→migrate→scrub→restore: essa lógica já esteve copiada em 3
+   lugares e uma cópia divergiu (o furo F2 de exfiltração do mcpUrl) — não duplicar de novo. */
+function applyIncomingState(db){
+  const local=(DB.settings||{});
+  const keep={ githubToken:local.githubToken, stateRepo:local.stateRepo,
+               providers:local.providers, mcpUrl:local.mcpUrl, dock:local.dock };
+  DB=migrate(db);
+  DB.settings=DB.settings||{};
+  scrubIncomingSettings(DB);   // remoto/backup/versão antiga nunca injeta config local-only
+  if(keep.githubToken) DB.settings.githubToken=keep.githubToken;
+  if(keep.stateRepo) DB.settings.stateRepo=keep.stateRepo;
+  if(keep.providers!==undefined) DB.settings.providers=keep.providers;
+  if(keep.mcpUrl!==undefined) DB.settings.mcpUrl=keep.mcpUrl;
+  if(keep.dock!==undefined) DB.settings.dock=keep.dock;
+}
 function hardenDB(db){
   if(!db || !Array.isArray(db.companies)) return db;
   for(const c of db.companies){

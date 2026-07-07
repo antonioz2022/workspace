@@ -46,10 +46,17 @@ async function ghPutFile(repo,path,text,sha,msg){
     headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
     body:JSON.stringify(body)});
   if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
-    throw new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
+    const err=new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:""));
+    err.status=r.status;   // quem chama distingue conflito real (409/422) de falha de acesso
+    throw err; }
   return r.json();
 }
 let lastPushedDbStr=null;
+/* hash curto (djb2+tamanho) SÓ pra detectar mudança — o guard do pull precisa saber se há
+   edição local não sincronizada mesmo DEPOIS de um reload (lastPushedDbStr morre com a aba),
+   então o hash do último push/pull fica persistido em LS_KEY+"-pushed". */
+function strHash(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0; return h+":"+s.length; }
+function rememberPushed(dbStr){ lastPushedDbStr=dbStr; try{ localStorage.setItem(LS_KEY+"-pushed", strHash(dbStr)); }catch(e){} }
 async function pushState(){
   if(!stateSyncOn() || stateApplying || statePushing) return;
   const dbClean=sanitizeStateForSync(), dbStr=JSON.stringify(dbClean);
@@ -65,19 +72,25 @@ async function pushState(){
         const payload={updatedAt:Date.now(), device:who, db:dbClean};
         const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null); // re-lê o sha a cada tentativa
         await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
-        lastPushedDbStr=dbStr;
+        rememberPushed(dbStr);
         localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
         const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
         statePushing=false; return;
       }catch(e){ lastErr=e; }
     }
-    // 2 tentativas falharam (provável conflito: outra pessoa sincronizou no meio) →
-    // NÃO sobrescreve às cegas: puxa a versão nova e avisa.
+    // 2 tentativas falharam. Só é CONFLITO quando o GitHub disse isso (409/422 = sha
+    // desatualizado, alguém sincronizou no meio) — aí puxa a versão nova e avisa.
+    // Falha persistente de OUTRA natureza (403 sem escrita, rede) NÃO pode virar pull
+    // forçado: descartaria as edições locais em silêncio. Elas ficam aqui e re-tentam.
     statePushing=false;
-    const pulled=await pullState({force:true}).catch(()=>false);
-    stateBadge(pulled
-      ? "☁ conflito: alguém sincronizou antes. Puxei a versão nova (revise e edite de novo se precisar)"
-      : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
+    if(lastErr && (lastErr.status===409 || lastErr.status===422)){
+      const pulled=await pullState({force:true}).catch(()=>false);
+      stateBadge(pulled
+        ? "☁ conflito: alguém sincronizou antes. Puxei a versão nova (revise e edite de novo se precisar)"
+        : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
+    }else{
+      stateBadge("☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr)+" — suas edições continuam neste navegador; tento de novo na próxima edição/foco", false);
+    }
   }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); statePushing=false; }
   statePushing=false;
 }
@@ -113,8 +126,11 @@ async function pullState({force=false}={}){
   if(!payload || !payload.db || !Array.isArray(payload.db.companies)) return false;
   const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
   if(!force && !(payload.updatedAt>last)) return false;
-  // PREVIEW/DIFF: remoto mais novo E há edições locais não sincronizadas → mostra o que muda e confirma
-  if(!force && lastPushedDbStr!==null && JSON.stringify(sanitizeStateForSync())!==lastPushedDbStr){
+  // PREVIEW/DIFF: remoto mais novo E há edições locais não sincronizadas → mostra o que muda e
+  // confirma. A referência do "último sincronizado" sobrevive ao reload (hash persistido) —
+  // senão um boot logo após editar (push ainda no debounce) aplicaria o remoto em silêncio.
+  const pushedRef = lastPushedDbStr!==null ? strHash(lastPushedDbStr) : localStorage.getItem(LS_KEY+"-pushed");
+  if(!force && pushedRef && strHash(JSON.stringify(sanitizeStateForSync()))!==pushedRef){
     const lines=diffState(payload.db);
     const resumo = lines.length ? lines.slice(0,12).map(l=>"• "+l).join("\n")+(lines.length>12?`\n• +${lines.length-12} mudança(s)…`:"") : "(mudanças pequenas)";
     const go = await uiConfirm(
@@ -124,21 +140,11 @@ async function pullState({force=false}={}){
   }
   stateApplying=true;
   try{
-    // preserva TUDO que é local (não vem do repo): token, repo, providers (com as chaves),
-    // mcpUrl e dock. Assim ninguém troca a baseUrl no estado remoto pra roubar a chave.
-    const local=(DB.settings||{});
-    const keepTok=local.githubToken, keepRepo=local.stateRepo,
-          keepProviders=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
-    DB=migrate(payload.db);
-    DB.settings=DB.settings||{};
-    scrubIncomingSettings(DB);   // apaga qualquer local-only vindo do remoto ANTES de restaurar a local
-    if(keepTok) DB.settings.githubToken=keepTok;
-    if(keepRepo) DB.settings.stateRepo=keepRepo;
-    if(keepProviders!==undefined) DB.settings.providers=keepProviders;
-    if(keepMcp!==undefined) DB.settings.mcpUrl=keepMcp;
-    if(keepDock!==undefined) DB.settings.dock=keepDock;
+    // preserva TUDO que é local (token, providers com as chaves, mcpUrl, dock) — ritual
+    // único em applyIncomingState, compartilhado com restaurar versão e importar backup.
+    applyIncomingState(payload.db);
     save();
-    lastPushedDbStr=JSON.stringify(sanitizeStateForSync());   // acabou de aplicar o remoto → não re-empurra idêntico
+    rememberPushed(JSON.stringify(sanitizeStateForSync()));   // acabou de aplicar o remoto → não re-empurra idêntico
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
     if(typeof hideCollab==="function") hideCollab();   // aplicou → some o aviso de novidade
@@ -147,6 +153,7 @@ async function pullState({force=false}={}){
   return true;
 }
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
+  localStorage.removeItem(LS_KEY+"-pushed");   // referência de sync é POR workspace; o pull da nova regrava
   collabSeenAt=0; if(typeof hideCollab==="function") hideCollab();   // troca de workspace zera o aviso
   stateBadge(stateSyncOn()?"☁ sync ligada: salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
 

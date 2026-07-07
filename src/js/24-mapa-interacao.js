@@ -137,6 +137,7 @@ function handleClick(id, type){
     if(expanded.has(id)) expanded.delete(id);
     else { expanded.add(id); f.pj.apps.forEach(a=>newborn.add(a.id)); }
   }
+  if(typeof markRecent==="function") markRecent(id);   // clique direto também conta pro "▶ Retomar"
   sel={id, ...f};
   save(); render(); openDrawer(f);
 }

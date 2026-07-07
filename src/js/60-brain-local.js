@@ -195,7 +195,9 @@ async function syncBrain(){
         await writeFile(dir,"projeto.md", genProjetoMd(c,p));
       }
     }
-    await writeFile(brainDir,"workspace.json", JSON.stringify(DB,null,2));
+    // espelho SEM segredos (mesma regra do backup): a pasta brain/ é lida por IAs por
+    // contrato — token do GitHub e chaves de IA nunca vão pro disco
+    await writeFile(brainDir,"workspace.json", JSON.stringify(sanitizeStateForSync(),null,2));
     save(); updateHud();
     if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); }
     const h=new Date();

@@ -939,6 +939,22 @@ function safeRepo(v){ v=(v==null?"":String(v)).trim(); return (/^[A-Za-z0-9._-]+
 // sobreviveria quando o valor local é indefinido e vazaria o token pro domínio do atacante.
 const LOCAL_ONLY_SETTINGS=["githubToken","providers","mcpUrl","dock"];
 function scrubIncomingSettings(db){ if(db&&db.settings) for(const k of LOCAL_ONLY_SETTINGS) delete db.settings[k]; return db; }
+/* aplica um DB que ENTRA (pull/restore/import) preservando o que é LOCAL deste navegador.
+   Ponto ÚNICO do ritual keep→migrate→scrub→restore: essa lógica já esteve copiada em 3
+   lugares e uma cópia divergiu (o furo F2 de exfiltração do mcpUrl) — não duplicar de novo. */
+function applyIncomingState(db){
+  const local=(DB.settings||{});
+  const keep={ githubToken:local.githubToken, stateRepo:local.stateRepo,
+               providers:local.providers, mcpUrl:local.mcpUrl, dock:local.dock };
+  DB=migrate(db);
+  DB.settings=DB.settings||{};
+  scrubIncomingSettings(DB);   // remoto/backup/versão antiga nunca injeta config local-only
+  if(keep.githubToken) DB.settings.githubToken=keep.githubToken;
+  if(keep.stateRepo) DB.settings.stateRepo=keep.stateRepo;
+  if(keep.providers!==undefined) DB.settings.providers=keep.providers;
+  if(keep.mcpUrl!==undefined) DB.settings.mcpUrl=keep.mcpUrl;
+  if(keep.dock!==undefined) DB.settings.dock=keep.dock;
+}
 function hardenDB(db){
   if(!db || !Array.isArray(db.companies)) return db;
   for(const c of db.companies){
@@ -1337,6 +1353,7 @@ function handleClick(id, type){
     if(expanded.has(id)) expanded.delete(id);
     else { expanded.add(id); f.pj.apps.forEach(a=>newborn.add(a.id)); }
   }
+  if(typeof markRecent==="function") markRecent(id);   // clique direto também conta pro "▶ Retomar"
   sel={id, ...f};
   save(); render(); openDrawer(f);
 }
@@ -1836,11 +1853,21 @@ function saveCo(){
   }
   save(); scheduleSync(); closeModals(); render();
 }
+/* excluir um nó tira também as relações do grafo que apontavam pra ele (senão ficam
+   órfãs "(nó removido)" pra sempre) e avisa a brain (INDEX/GRAFO regeneram no flush) */
+function dropLinksFor(ids){
+  if(!(DB.links||[]).length) return;
+  const set=new Set(ids), before=DB.links.length;
+  DB.links=DB.links.filter(l=>!set.has(l.from)&&!set.has(l.to));
+  if(DB.links.length!==before) brainLinksDirty=true;
+}
 async function delCo(id){
   const c=findNode(id).co;
   if(!(await uiConfirm(`Excluir "${c.name}" e todos os projetos dela? Não dá pra desfazer.`,{danger:true,okLabel:"Excluir"}))) return;
+  dropLinksFor([id, ...c.projects.flatMap(p=>[p.id, ...(p.apps||[]).map(a=>a.id)])]);
   DB.companies=DB.companies.filter(x=>x.id!==id);
-  closeDrawer(); save(); render();
+  brainStructDirty=true;   // o INDEX do cérebro precisa parar de listar o que saiu
+  closeDrawer(); save(); scheduleSync(); render();
 }
 
 function openPjModalFor(coId, pjId){ pjTargetCo=coId; openPjModal(pjId); }
@@ -1918,8 +1945,10 @@ async function _pjRepoValidate(){
 async function delPj(id){
   const f=findNode(id);
   if(!(await uiConfirm(`Excluir o projeto "${f.pj.name}"?`,{danger:true,okLabel:"Excluir"}))) return;
+  dropLinksFor([id, ...(f.pj.apps||[]).map(a=>a.id)]);
   f.co.projects=f.co.projects.filter(x=>x.id!==id);
-  closeDrawer(); save(); render();
+  brainStructDirty=true;
+  closeDrawer(); save(); scheduleSync(); render();
 }
 
 function openAppModalFor(pjId, apId){ apTargetPj=pjId; openAppModal(apId); }
@@ -1960,8 +1989,10 @@ function saveApp(){
 async function delApp(id){
   const f=findNode(id);
   if(!(await uiConfirm(`Excluir "${f.ap.name}"?`,{danger:true,okLabel:"Excluir"}))) return;
+  dropLinksFor([id]);
   f.pj.apps=f.pj.apps.filter(x=>x.id!==id);
-  closeDrawer(); save(); render();
+  f.pj._memDirty=true;   // projeto.md lista os serviços → reescreve no cérebro (igual ao saveApp)
+  closeDrawer(); save(); scheduleSync(); render();
 }
 
 let editingTodo=null;
@@ -2039,14 +2070,7 @@ function importData(ev){
     // backup = conteúdo de MENOR confiança: normaliza+higieniza (migrate→hardenDB: IDs/img)
     // e preserva os segredos LOCAIS deste navegador (um backup legítimo não os traz;
     // um malicioso não pode injetar mcpUrl/providers/token e vazar a chave)
-    const local=(DB.settings||{}), keepTok=local.githubToken, keepRepo=local.stateRepo,
-          keepProv=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
-    DB=migrate(d); DB.settings=DB.settings||{};
-    scrubIncomingSettings(DB);
-    if(keepTok)DB.settings.githubToken=keepTok; if(keepRepo)DB.settings.stateRepo=keepRepo;
-    if(keepProv!==undefined)DB.settings.providers=keepProv;
-    if(keepMcp!==undefined)DB.settings.mcpUrl=keepMcp;
-    if(keepDock!==undefined)DB.settings.dock=keepDock;
+    applyIncomingState(d);
     expanded=new Set(); save(); render(); fitView();
   }catch(e){ alert("Arquivo inválido: "+e.message);} };
   r.readAsText(f); ev.target.value="";
@@ -2921,7 +2945,9 @@ async function syncBrain(){
         await writeFile(dir,"projeto.md", genProjetoMd(c,p));
       }
     }
-    await writeFile(brainDir,"workspace.json", JSON.stringify(DB,null,2));
+    // espelho SEM segredos (mesma regra do backup): a pasta brain/ é lida por IAs por
+    // contrato — token do GitHub e chaves de IA nunca vão pro disco
+    await writeFile(brainDir,"workspace.json", JSON.stringify(sanitizeStateForSync(),null,2));
     save(); updateHud();
     if(sel){ const f=findNode(sel.id); if(f) openDrawer(f); }
     const h=new Date();
@@ -3435,10 +3461,17 @@ async function ghPutFile(repo,path,text,sha,msg){
     headers:{"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","Authorization":"Bearer "+tok,"content-type":"application/json"},
     body:JSON.stringify(body)});
   if(!r.ok){ let d=""; try{ d=(await r.json()).message||""; }catch(e){}
-    throw new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:"")); }
+    const err=new Error("GitHub "+r.status+(r.status===403?": o token precisa de Contents: read AND write no repo de estado":r.status===404?": repo de estado não existe ou o token não o inclui":"")+(d?" · "+d:""));
+    err.status=r.status;   // quem chama distingue conflito real (409/422) de falha de acesso
+    throw err; }
   return r.json();
 }
 let lastPushedDbStr=null;
+/* hash curto (djb2+tamanho) SÓ pra detectar mudança — o guard do pull precisa saber se há
+   edição local não sincronizada mesmo DEPOIS de um reload (lastPushedDbStr morre com a aba),
+   então o hash do último push/pull fica persistido em LS_KEY+"-pushed". */
+function strHash(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0; return h+":"+s.length; }
+function rememberPushed(dbStr){ lastPushedDbStr=dbStr; try{ localStorage.setItem(LS_KEY+"-pushed", strHash(dbStr)); }catch(e){} }
 async function pushState(){
   if(!stateSyncOn() || stateApplying || statePushing) return;
   const dbClean=sanitizeStateForSync(), dbStr=JSON.stringify(dbClean);
@@ -3454,19 +3487,25 @@ async function pushState(){
         const payload={updatedAt:Date.now(), device:who, db:dbClean};
         const cur=await ghGetFile(stateRepo(),STATE_PATH).catch(()=>null); // re-lê o sha a cada tentativa
         await ghPutFile(stateRepo(),STATE_PATH, JSON.stringify(payload), cur&&cur.sha, "workspace: sync de estado");
-        lastPushedDbStr=dbStr;
+        rememberPushed(dbStr);
         localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
         const h=new Date(); stateBadge(`☁ sincronizado ${String(h.getHours()).padStart(2,"0")}:${String(h.getMinutes()).padStart(2,"0")}`, true);
         statePushing=false; return;
       }catch(e){ lastErr=e; }
     }
-    // 2 tentativas falharam (provável conflito: outra pessoa sincronizou no meio) →
-    // NÃO sobrescreve às cegas: puxa a versão nova e avisa.
+    // 2 tentativas falharam. Só é CONFLITO quando o GitHub disse isso (409/422 = sha
+    // desatualizado, alguém sincronizou no meio) — aí puxa a versão nova e avisa.
+    // Falha persistente de OUTRA natureza (403 sem escrita, rede) NÃO pode virar pull
+    // forçado: descartaria as edições locais em silêncio. Elas ficam aqui e re-tentam.
     statePushing=false;
-    const pulled=await pullState({force:true}).catch(()=>false);
-    stateBadge(pulled
-      ? "☁ conflito: alguém sincronizou antes. Puxei a versão nova (revise e edite de novo se precisar)"
-      : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
+    if(lastErr && (lastErr.status===409 || lastErr.status===422)){
+      const pulled=await pullState({force:true}).catch(()=>false);
+      stateBadge(pulled
+        ? "☁ conflito: alguém sincronizou antes. Puxei a versão nova (revise e edite de novo se precisar)"
+        : "☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr), false);
+    }else{
+      stateBadge("☁ falha ao enviar: "+((lastErr&&lastErr.message)||lastErr)+" — suas edições continuam neste navegador; tento de novo na próxima edição/foco", false);
+    }
   }catch(e){ stateBadge("☁ falha ao enviar: "+(e.message||e), false); statePushing=false; }
   statePushing=false;
 }
@@ -3502,8 +3541,11 @@ async function pullState({force=false}={}){
   if(!payload || !payload.db || !Array.isArray(payload.db.companies)) return false;
   const last=parseInt(localStorage.getItem(LS_KEY+"-syncat")||"0",10);
   if(!force && !(payload.updatedAt>last)) return false;
-  // PREVIEW/DIFF: remoto mais novo E há edições locais não sincronizadas → mostra o que muda e confirma
-  if(!force && lastPushedDbStr!==null && JSON.stringify(sanitizeStateForSync())!==lastPushedDbStr){
+  // PREVIEW/DIFF: remoto mais novo E há edições locais não sincronizadas → mostra o que muda e
+  // confirma. A referência do "último sincronizado" sobrevive ao reload (hash persistido) —
+  // senão um boot logo após editar (push ainda no debounce) aplicaria o remoto em silêncio.
+  const pushedRef = lastPushedDbStr!==null ? strHash(lastPushedDbStr) : localStorage.getItem(LS_KEY+"-pushed");
+  if(!force && pushedRef && strHash(JSON.stringify(sanitizeStateForSync()))!==pushedRef){
     const lines=diffState(payload.db);
     const resumo = lines.length ? lines.slice(0,12).map(l=>"• "+l).join("\n")+(lines.length>12?`\n• +${lines.length-12} mudança(s)…`:"") : "(mudanças pequenas)";
     const go = await uiConfirm(
@@ -3513,21 +3555,11 @@ async function pullState({force=false}={}){
   }
   stateApplying=true;
   try{
-    // preserva TUDO que é local (não vem do repo): token, repo, providers (com as chaves),
-    // mcpUrl e dock. Assim ninguém troca a baseUrl no estado remoto pra roubar a chave.
-    const local=(DB.settings||{});
-    const keepTok=local.githubToken, keepRepo=local.stateRepo,
-          keepProviders=local.providers, keepMcp=local.mcpUrl, keepDock=local.dock;
-    DB=migrate(payload.db);
-    DB.settings=DB.settings||{};
-    scrubIncomingSettings(DB);   // apaga qualquer local-only vindo do remoto ANTES de restaurar a local
-    if(keepTok) DB.settings.githubToken=keepTok;
-    if(keepRepo) DB.settings.stateRepo=keepRepo;
-    if(keepProviders!==undefined) DB.settings.providers=keepProviders;
-    if(keepMcp!==undefined) DB.settings.mcpUrl=keepMcp;
-    if(keepDock!==undefined) DB.settings.dock=keepDock;
+    // preserva TUDO que é local (token, providers com as chaves, mcpUrl, dock) — ritual
+    // único em applyIncomingState, compartilhado com restaurar versão e importar backup.
+    applyIncomingState(payload.db);
     save();
-    lastPushedDbStr=JSON.stringify(sanitizeStateForSync());   // acabou de aplicar o remoto → não re-empurra idêntico
+    rememberPushed(JSON.stringify(sanitizeStateForSync()));   // acabou de aplicar o remoto → não re-empurra idêntico
     localStorage.setItem(LS_KEY+"-syncat", String(payload.updatedAt));
     render();
     if(typeof hideCollab==="function") hideCollab();   // aplicou → some o aviso de novidade
@@ -3536,6 +3568,7 @@ async function pullState({force=false}={}){
   return true;
 }
 function setStateRepo(v){ DB.settings=DB.settings||{}; DB.settings.stateRepo=(v||"").trim(); save();
+  localStorage.removeItem(LS_KEY+"-pushed");   // referência de sync é POR workspace; o pull da nova regrava
   collabSeenAt=0; if(typeof hideCollab==="function") hideCollab();   // troca de workspace zera o aviso
   stateBadge(stateSyncOn()?"☁ sync ligada: salva sozinho após edições":"☁ desligada (precisa de token + repo)"); }
 
@@ -3782,6 +3815,7 @@ function wsBoot(){ const r=stateRepo(); if(r) wsRemember(r); renderWsPill(); }
    fora e o painel importa ao abrir o projeto (quando a pasta local não está no jogo). */
 const queuedBrainPids=new Set(), queuedBrainCids=new Set();
 let brainPushTimer=null, brainPushing=false;
+let brainStructDirty=false;   // empresa/projeto excluído → INDEX precisa regenerar mesmo sem nada "dirty"
 const hhmm=()=>{ const h=new Date(); return String(h.getHours()).padStart(2,"0")+":"+String(h.getMinutes()).padStart(2,"0"); };
 function brainDirOf(c,p){ return `brain/${slug(c.name)}/${slug(p.name)}`; }
 function brainBadge(txt, ok){
@@ -3833,16 +3867,17 @@ function queueBrainPush(){
     if(c._coDirty) queuedBrainCids.add(c.id);
     for(const p of c.projects) if(p._memDirty||p._todoDirty) queuedBrainPids.add(p.id);
   }
-  if(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty) return;
+  if(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty && !brainStructDirty) return;
   clearTimeout(brainPushTimer);
   brainPushTimer=setTimeout(flushBrainPush, 4500);
 }
 async function flushBrainPush(){
-  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty)) return;
+  if(brainPushing||!stateSyncOn()||(!queuedBrainPids.size && !queuedBrainCids.size && !brainLinksDirty && !brainStructDirty)) return;
   brainPushing=true;
   const pids=[...queuedBrainPids]; queuedBrainPids.clear();
   const cids=[...queuedBrainCids]; queuedBrainCids.clear();
   const linksWere=brainLinksDirty; brainLinksDirty=false;   // relações mudaram → regenera GRAFO
+  const structWere=brainStructDirty; brainStructDirty=false; // exclusões → regenera INDEX (o put pula se igual)
   try{
     brainBadge("☁ salvando no cérebro…");
     let touched=false;
@@ -3867,6 +3902,7 @@ async function flushBrainPush(){
   }catch(e){
     pids.forEach(id=>queuedBrainPids.add(id)); cids.forEach(id=>queuedBrainCids.add(id));
     if(linksWere) brainLinksDirty=true;
+    if(structWere) brainStructDirty=true;
     brainBadge("☁ falha: "+(e.message||e), false);
   }
   brainPushing=false;
@@ -4506,11 +4542,7 @@ async function restoreSnapshot(sha){
     if(!j||!j.content) throw new Error("não consegui ler essa versão");
     const payload=JSON.parse(b64d(j.content));
     if(!payload||!payload.db||!Array.isArray(payload.db.companies)) throw new Error("versão inválida");
-    const local=(DB.settings||{}), keep={tok:local.githubToken, repo:local.stateRepo, prov:local.providers, mcp:local.mcpUrl, dock:local.dock};
-    DB=migrate(payload.db); DB.settings=DB.settings||{};
-    scrubIncomingSettings(DB);   // versão restaurada é conteúdo remoto: apaga local-only antes de restaurar a local
-    if(keep.tok)DB.settings.githubToken=keep.tok; if(keep.repo)DB.settings.stateRepo=keep.repo;
-    if(keep.prov!==undefined)DB.settings.providers=keep.prov; if(keep.mcp!==undefined)DB.settings.mcpUrl=keep.mcp; if(keep.dock!==undefined)DB.settings.dock=keep.dock;
+    applyIncomingState(payload.db);   // versão restaurada é conteúdo remoto: preserva o local-only (anti-exfil)
     // reescreve a brain (memoria/pendencias/projeto) pra bater com a versão restaurada
     DB.companies.forEach(c=>{ c._coDirty=true; c.projects.forEach(p=>{ p._memDirty=true; p._todoDirty=true; }); });
     lastPushedDbStr=null;                    // garante o push do estado restaurado
